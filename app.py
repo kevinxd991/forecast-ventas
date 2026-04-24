@@ -2,6 +2,8 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import time
+from datetime import datetime
 
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
@@ -15,6 +17,22 @@ st.set_page_config(
     layout="wide"
 )
 
+# -------------------------------------------------
+# AUTOACTUALIZACIÓN
+# -------------------------------------------------
+REFRESH_SECONDS = 60
+
+if "last_refresh" not in st.session_state:
+    st.session_state.last_refresh = time.time()
+
+if time.time() - st.session_state.last_refresh >= REFRESH_SECONDS:
+    st.session_state.last_refresh = time.time()
+    st.cache_data.clear()
+    st.rerun()
+
+# -------------------------------------------------
+# ESTILOS
+# -------------------------------------------------
 st.markdown("""
     <style>
     .main {
@@ -38,9 +56,13 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="titulo-principal">Dashboard de Predicción de Ventas - Familia FRUTA</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="subtitulo">Analiza estadísticas históricas, actualiza datos y genera pronósticos de ventas para los próximos 30 días.</div>',
+    '<div class="titulo-principal">Dashboard de Predicción de Ventas - Familia FRUTA</div>',
+    unsafe_allow_html=True
+)
+
+st.markdown(
+    '<div class="subtitulo">Analiza estadísticas históricas y genera pronósticos de ventas usando datos desde Google Sheets.</div>',
     unsafe_allow_html=True
 )
 
@@ -56,7 +78,6 @@ def preparar_datos(df):
     df = df.dropna(subset=["FECHA", "ventas_totales"])
     df = df.sort_values("FECHA").reset_index(drop=True)
 
-    # Variables calendario
     df["year"] = df["FECHA"].dt.year
     df["month"] = df["FECHA"].dt.month
     df["month_name"] = df["FECHA"].dt.month_name()
@@ -64,7 +85,6 @@ def preparar_datos(df):
     df["dia_nombre"] = df["FECHA"].dt.day_name()
     df["fin_semana"] = (df["day_of_week"] >= 5).astype(int)
 
-    # Variables para ML
     df["lag_1"] = df["ventas_totales"].shift(1)
     df["lag_7"] = df["ventas_totales"].shift(7)
     df["lag_14"] = df["ventas_totales"].shift(14)
@@ -154,184 +174,270 @@ def predecir_30_dias(df_model, modelo, features, dias=30):
             "ventas_predichas": round(pred, 2)
         })
 
-        df_future = pd.concat([df_future, pd.DataFrame([nueva_fila])], ignore_index=True)
+        df_future = pd.concat(
+            [df_future, pd.DataFrame([nueva_fila])],
+            ignore_index=True
+        )
 
     return pd.DataFrame(predicciones)
 
 
-# -------------------------------------------------
-# SIDEBAR
-# -------------------------------------------------
-st.sidebar.header("Carga de archivos")
-historico = st.sidebar.file_uploader("Subir archivo histórico", type="csv")
-nuevo = st.sidebar.file_uploader("Subir nuevos datos", type="csv")
+@st.cache_data(ttl=60)
+def cargar_datos_google_sheets(url):
+    return pd.read_csv(url)
+
 
 # -------------------------------------------------
-# CUERPO PRINCIPAL
+# CONEXIÓN A GOOGLE SHEETS
 # -------------------------------------------------
-if historico is None:
-    st.info("Sube primero el archivo histórico para iniciar el análisis.")
-else:
-    df = pd.read_csv(historico)
+st.sidebar.header("Datos en la nube")
+st.sidebar.success("Conectado a Google Sheets")
+st.sidebar.info("Actualización automática cada 60 segundos")
 
-    if nuevo is not None:
-        df_nuevo = pd.read_csv(nuevo)
-        df = pd.concat([df, df_nuevo], ignore_index=True)
+if st.sidebar.button("Actualizar ahora"):
+    st.session_state.last_refresh = time.time()
+    st.cache_data.clear()
+    st.rerun()
 
-    df = preparar_datos(df)
+st.sidebar.caption(
+    f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+)
 
-    if len(df.dropna()) < 31:
-        st.error("Se necesitan al menos 31 registros válidos para generar lags y entrenar el modelo.")
+url = "https://docs.google.com/spreadsheets/d/1VLTbAFyw6XYbQLKj32bAg6Bn3qHDf21nGty_uoTVY7o/gviz/tq?tqx=out:csv&gid=355174621"
+
+try:
+    df = cargar_datos_google_sheets(url)
+
+    df.columns = (
+        df.columns
+        .astype(str)
+        .str.replace("\ufeff", "", regex=False)
+        .str.strip()
+        .str.lower()
+        .str.replace(" ", "_")
+    )
+
+    if "fecha" not in df.columns:
+        st.error("No se encontró la columna 'FECHA'.")
+        st.write("Columnas detectadas:", df.columns.tolist())
+        st.dataframe(df.head())
         st.stop()
 
-    # -------------------------------------------------
-    # KPIs
-    # -------------------------------------------------
-    st.subheader("Resumen general")
-    k1, k2, k3, k4, k5 = st.columns(5)
-    k1.metric("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
-    k2.metric("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
-    k3.metric("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
-    k4.metric("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
-    k5.metric("Última fecha", str(df["FECHA"].max().date()))
+    if "ventas_totales" not in df.columns:
+        st.error("No se encontró la columna 'ventas_totales'.")
+        st.write("Columnas detectadas:", df.columns.tolist())
+        st.dataframe(df.head())
+        st.stop()
 
-    # -------------------------------------------------
-    # ESTADÍSTICAS
-    # -------------------------------------------------
-    st.subheader("Estadísticas descriptivas")
+    df = df.rename(columns={"fecha": "FECHA"})
 
-    c1, c2 = st.columns(2)
+except Exception as e:
+    st.error("No se pudo conectar correctamente con Google Sheets.")
+    st.write(e)
+    st.stop()
 
-    # Ventas promedio por día de semana
-    orden_dias = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    ventas_dia = (
-        df.groupby("dia_nombre", as_index=False)["ventas_totales"]
-        .mean()
-        .rename(columns={"ventas_totales": "promedio_ventas"})
-    )
-    ventas_dia["dia_nombre"] = pd.Categorical(ventas_dia["dia_nombre"], categories=orden_dias, ordered=True)
-    ventas_dia = ventas_dia.sort_values("dia_nombre")
+# -------------------------------------------------
+# PROCESAMIENTO DE DATOS
+# -------------------------------------------------
+df = preparar_datos(df)
 
-    with c1:
-        fig1, ax1 = plt.subplots(figsize=(8, 4))
-        ax1.bar(ventas_dia["dia_nombre"], ventas_dia["promedio_ventas"])
-        ax1.set_title("Promedio de ventas por día de la semana")
-        ax1.set_xlabel("Día")
-        ax1.set_ylabel("Promedio de ventas")
-        plt.xticks(rotation=45)
-        st.pyplot(fig1)
+if len(df.dropna()) < 31:
+    st.error("Se necesitan al menos 31 registros válidos para generar lags y entrenar el modelo.")
+    st.stop()
 
-    # Porcentaje de ventas por día de semana
-    pct_dia = (
-        df.groupby("dia_nombre", as_index=False)["ventas_totales"]
-        .sum()
-    )
-    pct_dia["porcentaje"] = pct_dia["ventas_totales"] / pct_dia["ventas_totales"].sum() * 100
-    pct_dia["dia_nombre"] = pd.Categorical(pct_dia["dia_nombre"], categories=orden_dias, ordered=True)
-    pct_dia = pct_dia.sort_values("dia_nombre")
+# -------------------------------------------------
+# KPIs
+# -------------------------------------------------
+st.subheader("Resumen general")
 
-    with c2:
-        fig2, ax2 = plt.subplots(figsize=(8, 4))
-        ax2.pie(pct_dia["porcentaje"], labels=pct_dia["dia_nombre"], autopct="%1.1f%%")
-        ax2.set_title("Participación porcentual de ventas por día")
-        st.pyplot(fig2)
+k1, k2, k3, k4, k5 = st.columns(5)
 
-    c3, c4 = st.columns(2)
+k1.metric("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
+k2.metric("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
+k3.metric("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
+k4.metric("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
+k5.metric("Última fecha", str(df["FECHA"].max().date()))
 
-    # Ventas por mes
-    orden_meses = [
-        "January", "February", "March", "April", "May", "June",
-        "July", "August", "September", "October", "November", "December"
-    ]
-    ventas_mes = (
-        df.groupby("month_name", as_index=False)["ventas_totales"]
-        .mean()
-        .rename(columns={"ventas_totales": "promedio_ventas"})
-    )
-    ventas_mes["month_name"] = pd.Categorical(ventas_mes["month_name"], categories=orden_meses, ordered=True)
-    ventas_mes = ventas_mes.sort_values("month_name")
+# -------------------------------------------------
+# ESTADÍSTICAS
+# -------------------------------------------------
+st.subheader("Estadísticas descriptivas")
 
-    with c3:
-        fig3, ax3 = plt.subplots(figsize=(8, 4))
-        ax3.bar(ventas_mes["month_name"], ventas_mes["promedio_ventas"])
-        ax3.set_title("Promedio de ventas por mes")
-        ax3.set_xlabel("Mes")
-        ax3.set_ylabel("Promedio de ventas")
-        plt.xticks(rotation=45)
-        st.pyplot(fig3)
+c1, c2 = st.columns(2)
 
-    # Crecimiento anual
-    ventas_anio = df.groupby("year", as_index=False)["ventas_totales"].sum()
-    ventas_anio["crecimiento_%"] = ventas_anio["ventas_totales"].pct_change() * 100
+orden_dias = [
+    "Monday", "Tuesday", "Wednesday",
+    "Thursday", "Friday", "Saturday", "Sunday"
+]
 
-    with c4:
-        fig4, ax4 = plt.subplots(figsize=(8, 4))
-        ax4.plot(ventas_anio["year"], ventas_anio["ventas_totales"], marker="o")
-        ax4.set_title("Crecimiento histórico de ventas por año")
-        ax4.set_xlabel("Año")
-        ax4.set_ylabel("Ventas totales")
-        st.pyplot(fig4)
+ventas_dia = (
+    df.groupby("dia_nombre", as_index=False)["ventas_totales"]
+    .mean()
+    .rename(columns={"ventas_totales": "promedio_ventas"})
+)
 
-    # Histórico completo
-    st.subheader("Serie histórica de ventas")
-    fig5, ax5 = plt.subplots(figsize=(14, 5))
-    ax5.plot(df["FECHA"], df["ventas_totales"])
-    ax5.set_title("Comportamiento histórico de ventas")
-    ax5.set_xlabel("Fecha")
-    ax5.set_ylabel("Ventas")
+ventas_dia["dia_nombre"] = pd.Categorical(
+    ventas_dia["dia_nombre"],
+    categories=orden_dias,
+    ordered=True
+)
+
+ventas_dia = ventas_dia.sort_values("dia_nombre")
+
+with c1:
+    fig1, ax1 = plt.subplots(figsize=(8, 4))
+    ax1.bar(ventas_dia["dia_nombre"], ventas_dia["promedio_ventas"])
+    ax1.set_title("Promedio de ventas por día de la semana")
+    ax1.set_xlabel("Día")
+    ax1.set_ylabel("Promedio de ventas")
     plt.xticks(rotation=45)
-    st.pyplot(fig5)
+    st.pyplot(fig1)
 
-    # -------------------------------------------------
-    # MODELO
-    # -------------------------------------------------
-    modelo, features, split, y_train, y_test, pred, mae, mse, rmse, r2, df_model = entrenar_modelo(df)
+pct_dia = (
+    df.groupby("dia_nombre", as_index=False)["ventas_totales"]
+    .sum()
+)
 
-    st.subheader("Resumen del modelo predictivo")
-    m1, m2, m3, m4 = st.columns(4)
-    m1.metric("MAE", f"{mae:,.2f}")
-    m2.metric("MSE", f"{mse:,.2f}")
-    m3.metric("RMSE", f"{rmse:,.2f}")
-    m4.metric("R²", f"{r2:.3f}")
+pct_dia["porcentaje"] = (
+    pct_dia["ventas_totales"] / pct_dia["ventas_totales"].sum() * 100
+)
 
-    st.subheader("Comparación de ventas reales vs predicción")
-    fechas_train = df_model.iloc[:split]["FECHA"]
-    fechas_test = df_model.iloc[split:]["FECHA"]
+pct_dia["dia_nombre"] = pd.Categorical(
+    pct_dia["dia_nombre"],
+    categories=orden_dias,
+    ordered=True
+)
 
-    fig6, ax6 = plt.subplots(figsize=(14, 5))
-    ax6.plot(fechas_train, y_train.values, label="Train real")
-    ax6.plot(fechas_test, y_test.values, label="Test real")
-    ax6.plot(fechas_test, pred, label="Predicción")
-    ax6.set_title("Ventas reales vs predicción del modelo")
-    ax6.set_xlabel("Fecha")
-    ax6.set_ylabel("Ventas")
-    ax6.legend()
-    plt.xticks(rotation=45)
-    st.pyplot(fig6)
+pct_dia = pct_dia.sort_values("dia_nombre")
 
-    # -------------------------------------------------
-    # FORECAST 30 DÍAS
-    # -------------------------------------------------
-    forecast_30 = predecir_30_dias(df_model, modelo, features, dias=30)
-
-    st.subheader("Proyección de los próximos 30 días")
-    fig7, ax7 = plt.subplots(figsize=(14, 5))
-    ax7.plot(df["FECHA"].tail(90), df["ventas_totales"].tail(90), label="Histórico reciente")
-    ax7.plot(forecast_30["FECHA"], forecast_30["ventas_predichas"], label="Forecast 30 días")
-    ax7.set_title("Pronóstico de ventas a 30 días")
-    ax7.set_xlabel("Fecha")
-    ax7.set_ylabel("Ventas")
-    ax7.legend()
-    plt.xticks(rotation=45)
-    st.pyplot(fig7)
-
-    st.subheader("Tabla de pronóstico a 30 días")
-    st.dataframe(forecast_30, use_container_width=True)
-
-    csv = forecast_30.to_csv(index=False).encode("utf-8")
-    st.download_button(
-        label="Descargar forecast en CSV",
-        data=csv,
-        file_name="forecast_30_dias_fruta.csv",
-        mime="text/csv"
+with c2:
+    fig2, ax2 = plt.subplots(figsize=(8, 4))
+    ax2.pie(
+        pct_dia["porcentaje"],
+        labels=pct_dia["dia_nombre"],
+        autopct="%1.1f%%"
     )
+    ax2.set_title("Participación porcentual de ventas por día")
+    st.pyplot(fig2)
+
+c3, c4 = st.columns(2)
+
+orden_meses = [
+    "January", "February", "March", "April",
+    "May", "June", "July", "August",
+    "September", "October", "November", "December"
+]
+
+ventas_mes = (
+    df.groupby("month_name", as_index=False)["ventas_totales"]
+    .mean()
+    .rename(columns={"ventas_totales": "promedio_ventas"})
+)
+
+ventas_mes["month_name"] = pd.Categorical(
+    ventas_mes["month_name"],
+    categories=orden_meses,
+    ordered=True
+)
+
+ventas_mes = ventas_mes.sort_values("month_name")
+
+with c3:
+    fig3, ax3 = plt.subplots(figsize=(8, 4))
+    ax3.bar(ventas_mes["month_name"], ventas_mes["promedio_ventas"])
+    ax3.set_title("Promedio de ventas por mes")
+    ax3.set_xlabel("Mes")
+    ax3.set_ylabel("Promedio de ventas")
+    plt.xticks(rotation=45)
+    st.pyplot(fig3)
+
+ventas_anio = df.groupby("year", as_index=False)["ventas_totales"].sum()
+ventas_anio["crecimiento_%"] = ventas_anio["ventas_totales"].pct_change() * 100
+
+with c4:
+    fig4, ax4 = plt.subplots(figsize=(8, 4))
+    ax4.plot(ventas_anio["year"], ventas_anio["ventas_totales"], marker="o")
+    ax4.set_title("Crecimiento histórico de ventas por año")
+    ax4.set_xlabel("Año")
+    ax4.set_ylabel("Ventas totales")
+    st.pyplot(fig4)
+
+# -------------------------------------------------
+# HISTÓRICO COMPLETO
+# -------------------------------------------------
+st.subheader("Serie histórica de ventas")
+
+fig5, ax5 = plt.subplots(figsize=(14, 5))
+ax5.plot(df["FECHA"], df["ventas_totales"])
+ax5.set_title("Comportamiento histórico de ventas")
+ax5.set_xlabel("Fecha")
+ax5.set_ylabel("Ventas")
+plt.xticks(rotation=45)
+st.pyplot(fig5)
+
+# -------------------------------------------------
+# MODELO
+# -------------------------------------------------
+modelo, features, split, y_train, y_test, pred, mae, mse, rmse, r2, df_model = entrenar_modelo(df)
+
+st.subheader("Resumen del modelo predictivo")
+
+m1, m2, m3, m4 = st.columns(4)
+
+m1.metric("MAE", f"{mae:,.2f}")
+m2.metric("MSE", f"{mse:,.2f}")
+m3.metric("RMSE", f"{rmse:,.2f}")
+m4.metric("R²", f"{r2:.3f}")
+
+st.subheader("Comparación de ventas reales vs predicción")
+
+fechas_train = df_model.iloc[:split]["FECHA"]
+fechas_test = df_model.iloc[split:]["FECHA"]
+
+fig6, ax6 = plt.subplots(figsize=(14, 5))
+ax6.plot(fechas_train, y_train.values, label="Train real")
+ax6.plot(fechas_test, y_test.values, label="Test real")
+ax6.plot(fechas_test, pred, label="Predicción")
+ax6.set_title("Ventas reales vs predicción del modelo")
+ax6.set_xlabel("Fecha")
+ax6.set_ylabel("Ventas")
+ax6.legend()
+plt.xticks(rotation=45)
+st.pyplot(fig6)
+
+# -------------------------------------------------
+# FORECAST 30 DÍAS
+# -------------------------------------------------
+forecast_30 = predecir_30_dias(df_model, modelo, features, dias=30)
+
+st.subheader("Proyección de los próximos 30 días")
+
+fig7, ax7 = plt.subplots(figsize=(14, 5))
+ax7.plot(
+    df["FECHA"].tail(90),
+    df["ventas_totales"].tail(90),
+    label="Histórico reciente"
+)
+ax7.plot(
+    forecast_30["FECHA"],
+    forecast_30["ventas_predichas"],
+    label="Forecast 30 días"
+)
+ax7.set_title("Pronóstico de ventas a 30 días")
+ax7.set_xlabel("Fecha")
+ax7.set_ylabel("Ventas")
+ax7.legend()
+plt.xticks(rotation=45)
+st.pyplot(fig7)
+
+st.subheader("Tabla de pronóstico a 30 días")
+st.dataframe(forecast_30, use_container_width=True)
+
+csv = forecast_30.to_csv(index=False).encode("utf-8")
+
+st.download_button(
+    label="Descargar forecast en CSV",
+    data=csv,
+    file_name="forecast_30_dias_fruta.csv",
+    mime="text/csv"
+)
