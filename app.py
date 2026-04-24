@@ -1,12 +1,15 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 import time
 from datetime import datetime
 
+import plotly.express as px
+import plotly.graph_objects as go
+
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
 
 # -------------------------------------------------
 # CONFIGURACIÓN GENERAL
@@ -16,6 +19,7 @@ st.set_page_config(
     page_icon="📈",
     layout="wide"
 )
+
 
 # -------------------------------------------------
 # AUTOACTUALIZACIÓN
@@ -30,31 +34,107 @@ if time.time() - st.session_state.last_refresh >= REFRESH_SECONDS:
     st.cache_data.clear()
     st.rerun()
 
+
 # -------------------------------------------------
-# ESTILOS
+# ESTILOS PREMIUM
 # -------------------------------------------------
 st.markdown("""
-    <style>
-    .main {
-        padding-top: 1rem;
-    }
-    .block-container {
-        padding-top: 1rem;
-        padding-bottom: 2rem;
-    }
-    .titulo-principal {
-        font-size: 2.2rem;
-        font-weight: 700;
-        color: #0F172A;
-        margin-bottom: 0.3rem;
-    }
-    .subtitulo {
-        font-size: 1rem;
-        color: #475569;
-        margin-bottom: 1.5rem;
-    }
-    </style>
+<style>
+.stApp {
+    background: linear-gradient(135deg, #F8FAFC 0%, #EEF2F7 100%);
+}
+
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 3rem;
+    max-width: 1450px;
+}
+
+.titulo-principal {
+    font-size: 2.7rem;
+    font-weight: 850;
+    color: #0F172A;
+    margin-bottom: 0.2rem;
+    letter-spacing: -0.03em;
+}
+
+.subtitulo {
+    font-size: 1.05rem;
+    color: #64748B;
+    margin-bottom: 2rem;
+}
+
+.card {
+    background: white;
+    padding: 1.35rem;
+    border-radius: 20px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+    border: 1px solid #E2E8F0;
+    min-height: 120px;
+}
+
+.kpi-title {
+    font-size: 0.82rem;
+    color: #64748B;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.kpi-value {
+    font-size: 2rem;
+    color: #0F172A;
+    font-weight: 850;
+    margin-top: 0.4rem;
+}
+
+.section-title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: #0F172A;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+
+.chart-card {
+    background: white;
+    padding: 1.2rem;
+    border-radius: 20px;
+    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.07);
+    border: 1px solid #E2E8F0;
+    margin-bottom: 1.2rem;
+}
+
+section[data-testid="stSidebar"] {
+    background: #0F172A;
+}
+
+section[data-testid="stSidebar"] * {
+    color: white !important;
+}
+
+.stButton button {
+    border-radius: 12px;
+    background: #2563EB;
+    color: white;
+    border: none;
+    font-weight: 700;
+}
+
+.stDownloadButton button {
+    border-radius: 12px;
+    background: #0F172A;
+    color: white;
+    border: none;
+    font-weight: 700;
+}
+
+.stAlert {
+    border-radius: 14px;
+}
+</style>
 """, unsafe_allow_html=True)
+
 
 st.markdown(
     '<div class="titulo-principal">Dashboard de Predicción de Ventas - Familia FRUTA</div>',
@@ -62,9 +142,10 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="subtitulo">Analiza estadísticas históricas y genera pronósticos de ventas usando datos desde Google Sheets.</div>',
+    '<div class="subtitulo">Panel ejecutivo con análisis histórico, métricas clave y forecast automático conectado a Google Sheets.</div>',
     unsafe_allow_html=True
 )
+
 
 # -------------------------------------------------
 # FUNCIONES
@@ -100,16 +181,9 @@ def entrenar_modelo(df):
     df_model = df.dropna().copy()
 
     features = [
-        "year",
-        "month",
-        "day_of_week",
-        "fin_semana",
-        "lag_1",
-        "lag_7",
-        "lag_14",
-        "lag_30",
-        "media_7",
-        "media_30"
+        "year", "month", "day_of_week", "fin_semana",
+        "lag_1", "lag_7", "lag_14", "lag_30",
+        "media_7", "media_30"
     ]
 
     X = df_model[features]
@@ -146,23 +220,20 @@ def predecir_30_dias(df_model, modelo, features, dias=30):
 
         nueva_fila = {
             "FECHA": nueva_fecha,
-            "ventas_totales": np.nan
+            "ventas_totales": np.nan,
+            "year": nueva_fecha.year,
+            "month": nueva_fecha.month,
+            "month_name": nueva_fecha.month_name(),
+            "day_of_week": nueva_fecha.dayofweek,
+            "dia_nombre": nueva_fecha.day_name(),
+            "fin_semana": 1 if nueva_fecha.dayofweek >= 5 else 0,
+            "lag_1": df_future["ventas_totales"].iloc[-1],
+            "lag_7": df_future["ventas_totales"].iloc[-7],
+            "lag_14": df_future["ventas_totales"].iloc[-14],
+            "lag_30": df_future["ventas_totales"].iloc[-30],
+            "media_7": df_future["ventas_totales"].tail(7).mean(),
+            "media_30": df_future["ventas_totales"].tail(30).mean()
         }
-
-        nueva_fila["year"] = nueva_fecha.year
-        nueva_fila["month"] = nueva_fecha.month
-        nueva_fila["month_name"] = nueva_fecha.month_name()
-        nueva_fila["day_of_week"] = nueva_fecha.dayofweek
-        nueva_fila["dia_nombre"] = nueva_fecha.day_name()
-        nueva_fila["fin_semana"] = 1 if nueva_fecha.dayofweek >= 5 else 0
-
-        nueva_fila["lag_1"] = df_future["ventas_totales"].iloc[-1]
-        nueva_fila["lag_7"] = df_future["ventas_totales"].iloc[-7]
-        nueva_fila["lag_14"] = df_future["ventas_totales"].iloc[-14]
-        nueva_fila["lag_30"] = df_future["ventas_totales"].iloc[-30]
-
-        nueva_fila["media_7"] = df_future["ventas_totales"].tail(7).mean()
-        nueva_fila["media_30"] = df_future["ventas_totales"].tail(30).mean()
 
         X_new = pd.DataFrame([nueva_fila])[features]
         pred = modelo.predict(X_new)[0]
@@ -187,8 +258,23 @@ def cargar_datos_google_sheets(url):
     return pd.read_csv(url)
 
 
+def card_kpi(titulo, valor):
+    st.markdown(f"""
+    <div class="card">
+        <div class="kpi-title">{titulo}</div>
+        <div class="kpi-value">{valor}</div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+def chart_container(fig):
+    st.markdown('<div class="chart-card">', unsafe_allow_html=True)
+    st.plotly_chart(fig, use_container_width=True)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+
 # -------------------------------------------------
-# CONEXIÓN A GOOGLE SHEETS
+# SIDEBAR
 # -------------------------------------------------
 st.sidebar.header("Datos en la nube")
 st.sidebar.success("Conectado a Google Sheets")
@@ -203,6 +289,10 @@ st.sidebar.caption(
     f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
 )
 
+
+# -------------------------------------------------
+# CONEXIÓN A GOOGLE SHEETS
+# -------------------------------------------------
 url = "https://docs.google.com/spreadsheets/d/1VLTbAFyw6XYbQLKj32bAg6Bn3qHDf21nGty_uoTVY7o/gviz/tq?tqx=out:csv&gid=355174621"
 
 try:
@@ -236,8 +326,9 @@ except Exception as e:
     st.write(e)
     st.stop()
 
+
 # -------------------------------------------------
-# PROCESAMIENTO DE DATOS
+# PROCESAMIENTO
 # -------------------------------------------------
 df = preparar_datos(df)
 
@@ -245,25 +336,34 @@ if len(df.dropna()) < 31:
     st.error("Se necesitan al menos 31 registros válidos para generar lags y entrenar el modelo.")
     st.stop()
 
+
 # -------------------------------------------------
-# KPIs
+# KPIS
 # -------------------------------------------------
-st.subheader("Resumen general")
+st.markdown('<div class="section-title">Resumen ejecutivo</div>', unsafe_allow_html=True)
 
 k1, k2, k3, k4, k5 = st.columns(5)
 
-k1.metric("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
-k2.metric("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
-k3.metric("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
-k4.metric("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
-k5.metric("Última fecha", str(df["FECHA"].max().date()))
+with k1:
+    card_kpi("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
+
+with k2:
+    card_kpi("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
+
+with k3:
+    card_kpi("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
+
+with k4:
+    card_kpi("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
+
+with k5:
+    card_kpi("Última fecha", str(df["FECHA"].max().date()))
+
 
 # -------------------------------------------------
-# ESTADÍSTICAS
+# ESTADÍSTICAS DESCRIPTIVAS
 # -------------------------------------------------
-st.subheader("Estadísticas descriptivas")
-
-c1, c2 = st.columns(2)
+st.markdown('<div class="section-title">Estadísticas descriptivas</div>', unsafe_allow_html=True)
 
 orden_dias = [
     "Monday", "Tuesday", "Wednesday",
@@ -284,15 +384,6 @@ ventas_dia["dia_nombre"] = pd.Categorical(
 
 ventas_dia = ventas_dia.sort_values("dia_nombre")
 
-with c1:
-    fig1, ax1 = plt.subplots(figsize=(8, 4))
-    ax1.bar(ventas_dia["dia_nombre"], ventas_dia["promedio_ventas"])
-    ax1.set_title("Promedio de ventas por día de la semana")
-    ax1.set_xlabel("Día")
-    ax1.set_ylabel("Promedio de ventas")
-    plt.xticks(rotation=45)
-    st.pyplot(fig1)
-
 pct_dia = (
     df.groupby("dia_nombre", as_index=False)["ventas_totales"]
     .sum()
@@ -310,17 +401,45 @@ pct_dia["dia_nombre"] = pd.Categorical(
 
 pct_dia = pct_dia.sort_values("dia_nombre")
 
-with c2:
-    fig2, ax2 = plt.subplots(figsize=(8, 4))
-    ax2.pie(
-        pct_dia["porcentaje"],
-        labels=pct_dia["dia_nombre"],
-        autopct="%1.1f%%"
-    )
-    ax2.set_title("Participación porcentual de ventas por día")
-    st.pyplot(fig2)
+c1, c2 = st.columns(2)
 
-c3, c4 = st.columns(2)
+with c1:
+    fig1 = px.bar(
+        ventas_dia,
+        x="dia_nombre",
+        y="promedio_ventas",
+        title="Promedio de ventas por día",
+        labels={"dia_nombre": "Día", "promedio_ventas": "Promedio de ventas"},
+        text_auto=".2s"
+    )
+
+    fig1.update_layout(
+        template="plotly_white",
+        height=430,
+        title_font_size=20,
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig1)
+
+with c2:
+    fig2 = px.pie(
+        pct_dia,
+        names="dia_nombre",
+        values="porcentaje",
+        title="Participación porcentual por día",
+        hole=0.45
+    )
+
+    fig2.update_layout(
+        template="plotly_white",
+        height=430,
+        title_font_size=20,
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig2)
+
 
 orden_meses = [
     "January", "February", "March", "April",
@@ -342,95 +461,173 @@ ventas_mes["month_name"] = pd.Categorical(
 
 ventas_mes = ventas_mes.sort_values("month_name")
 
-with c3:
-    fig3, ax3 = plt.subplots(figsize=(8, 4))
-    ax3.bar(ventas_mes["month_name"], ventas_mes["promedio_ventas"])
-    ax3.set_title("Promedio de ventas por mes")
-    ax3.set_xlabel("Mes")
-    ax3.set_ylabel("Promedio de ventas")
-    plt.xticks(rotation=45)
-    st.pyplot(fig3)
-
 ventas_anio = df.groupby("year", as_index=False)["ventas_totales"].sum()
 ventas_anio["crecimiento_%"] = ventas_anio["ventas_totales"].pct_change() * 100
 
+c3, c4 = st.columns(2)
+
+with c3:
+    fig3 = px.bar(
+        ventas_mes,
+        x="month_name",
+        y="promedio_ventas",
+        title="Promedio de ventas por mes",
+        labels={"month_name": "Mes", "promedio_ventas": "Promedio de ventas"},
+        text_auto=".2s"
+    )
+
+    fig3.update_layout(
+        template="plotly_white",
+        height=430,
+        title_font_size=20,
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig3)
+
 with c4:
-    fig4, ax4 = plt.subplots(figsize=(8, 4))
-    ax4.plot(ventas_anio["year"], ventas_anio["ventas_totales"], marker="o")
-    ax4.set_title("Crecimiento histórico de ventas por año")
-    ax4.set_xlabel("Año")
-    ax4.set_ylabel("Ventas totales")
-    st.pyplot(fig4)
+    fig4 = px.line(
+        ventas_anio,
+        x="year",
+        y="ventas_totales",
+        title="Crecimiento histórico por año",
+        markers=True,
+        labels={"year": "Año", "ventas_totales": "Ventas totales"}
+    )
+
+    fig4.update_layout(
+        template="plotly_white",
+        height=430,
+        title_font_size=20,
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig4)
+
 
 # -------------------------------------------------
-# HISTÓRICO COMPLETO
+# SERIE HISTÓRICA
 # -------------------------------------------------
-st.subheader("Serie histórica de ventas")
+st.markdown('<div class="section-title">Serie histórica de ventas</div>', unsafe_allow_html=True)
 
-fig5, ax5 = plt.subplots(figsize=(14, 5))
-ax5.plot(df["FECHA"], df["ventas_totales"])
-ax5.set_title("Comportamiento histórico de ventas")
-ax5.set_xlabel("Fecha")
-ax5.set_ylabel("Ventas")
-plt.xticks(rotation=45)
-st.pyplot(fig5)
+fig5 = px.line(
+    df,
+    x="FECHA",
+    y="ventas_totales",
+    title="Comportamiento histórico de ventas",
+    labels={"FECHA": "Fecha", "ventas_totales": "Ventas"}
+)
+
+fig5.update_layout(
+    template="plotly_white",
+    height=500,
+    title_font_size=20,
+    margin=dict(l=20, r=20, t=60, b=20)
+)
+
+chart_container(fig5)
+
 
 # -------------------------------------------------
 # MODELO
 # -------------------------------------------------
 modelo, features, split, y_train, y_test, pred, mae, mse, rmse, r2, df_model = entrenar_modelo(df)
 
-st.subheader("Resumen del modelo predictivo")
+st.markdown('<div class="section-title">Resumen del modelo predictivo</div>', unsafe_allow_html=True)
 
 m1, m2, m3, m4 = st.columns(4)
 
-m1.metric("MAE", f"{mae:,.2f}")
-m2.metric("MSE", f"{mse:,.2f}")
-m3.metric("RMSE", f"{rmse:,.2f}")
-m4.metric("R²", f"{r2:.3f}")
+with m1:
+    card_kpi("MAE", f"{mae:,.2f}")
 
-st.subheader("Comparación de ventas reales vs predicción")
+with m2:
+    card_kpi("MSE", f"{mse:,.2f}")
+
+with m3:
+    card_kpi("RMSE", f"{rmse:,.2f}")
+
+with m4:
+    card_kpi("R²", f"{r2:.3f}")
+
+
+st.markdown('<div class="section-title">Comparación real vs predicción</div>', unsafe_allow_html=True)
 
 fechas_train = df_model.iloc[:split]["FECHA"]
 fechas_test = df_model.iloc[split:]["FECHA"]
 
-fig6, ax6 = plt.subplots(figsize=(14, 5))
-ax6.plot(fechas_train, y_train.values, label="Train real")
-ax6.plot(fechas_test, y_test.values, label="Test real")
-ax6.plot(fechas_test, pred, label="Predicción")
-ax6.set_title("Ventas reales vs predicción del modelo")
-ax6.set_xlabel("Fecha")
-ax6.set_ylabel("Ventas")
-ax6.legend()
-plt.xticks(rotation=45)
-st.pyplot(fig6)
+fig6 = go.Figure()
+
+fig6.add_trace(go.Scatter(
+    x=fechas_train,
+    y=y_train.values,
+    mode="lines",
+    name="Train real"
+))
+
+fig6.add_trace(go.Scatter(
+    x=fechas_test,
+    y=y_test.values,
+    mode="lines",
+    name="Test real"
+))
+
+fig6.add_trace(go.Scatter(
+    x=fechas_test,
+    y=pred,
+    mode="lines",
+    name="Predicción"
+))
+
+fig6.update_layout(
+    template="plotly_white",
+    title="Ventas reales vs predicción del modelo",
+    height=500,
+    title_font_size=20,
+    xaxis_title="Fecha",
+    yaxis_title="Ventas",
+    margin=dict(l=20, r=20, t=60, b=20)
+)
+
+chart_container(fig6)
+
 
 # -------------------------------------------------
 # FORECAST 30 DÍAS
 # -------------------------------------------------
 forecast_30 = predecir_30_dias(df_model, modelo, features, dias=30)
 
-st.subheader("Proyección de los próximos 30 días")
+st.markdown('<div class="section-title">Proyección de los próximos 30 días</div>', unsafe_allow_html=True)
 
-fig7, ax7 = plt.subplots(figsize=(14, 5))
-ax7.plot(
-    df["FECHA"].tail(90),
-    df["ventas_totales"].tail(90),
-    label="Histórico reciente"
-)
-ax7.plot(
-    forecast_30["FECHA"],
-    forecast_30["ventas_predichas"],
-    label="Forecast 30 días"
-)
-ax7.set_title("Pronóstico de ventas a 30 días")
-ax7.set_xlabel("Fecha")
-ax7.set_ylabel("Ventas")
-ax7.legend()
-plt.xticks(rotation=45)
-st.pyplot(fig7)
+fig7 = go.Figure()
 
-st.subheader("Tabla de pronóstico a 30 días")
+fig7.add_trace(go.Scatter(
+    x=df["FECHA"].tail(90),
+    y=df["ventas_totales"].tail(90),
+    mode="lines",
+    name="Histórico reciente"
+))
+
+fig7.add_trace(go.Scatter(
+    x=forecast_30["FECHA"],
+    y=forecast_30["ventas_predichas"],
+    mode="lines+markers",
+    name="Forecast 30 días"
+))
+
+fig7.update_layout(
+    template="plotly_white",
+    title="Pronóstico de ventas a 30 días",
+    height=500,
+    title_font_size=20,
+    xaxis_title="Fecha",
+    yaxis_title="Ventas",
+    margin=dict(l=20, r=20, t=60, b=20)
+)
+
+chart_container(fig7)
+
+
+st.markdown('<div class="section-title">Tabla de pronóstico</div>', unsafe_allow_html=True)
 st.dataframe(forecast_30, use_container_width=True)
 
 csv = forecast_30.to_csv(index=False).encode("utf-8")
