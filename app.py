@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import time
 from datetime import datetime
+from io import StringIO
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -264,8 +265,8 @@ def calcular_metricas(y_test, pred):
 
 
 @st.cache_resource(show_spinner=False)
-def entrenar_mejor_modelo_cache(df_csv):
-    df = pd.read_json(df_csv)
+def entrenar_mejor_modelo_cache(df_json):
+    df = pd.read_json(StringIO(df_json))
     return entrenar_mejor_modelo(df)
 
 
@@ -288,9 +289,6 @@ def entrenar_mejor_modelo(df):
 
     y_train = y.iloc[:split]
     y_test = y.iloc[split:]
-
-    fechas_train = df_model.iloc[:split]["FECHA"]
-    fechas_test = df_model.iloc[split:]["FECHA"]
 
     modelos_ml = {
         "Linear Regression": LinearRegression(),
@@ -392,6 +390,9 @@ def entrenar_mejor_modelo(df):
 
     if PROPHET_OK:
         try:
+            fechas_train = df_model.iloc[:split]["FECHA"]
+            fechas_test = df_model.iloc[split:]["FECHA"]
+
             prophet_train = pd.DataFrame({
                 "ds": fechas_train,
                 "y": y_train.values
@@ -746,7 +747,7 @@ with b7:
         seleccionar_seccion("modelo")
 
 with b8:
-    if st.button("Forecast 30 días", use_container_width=True):
+    if st.button("Pronóstico: 30 días", use_container_width=True):
         seleccionar_seccion("forecast")
 
 
