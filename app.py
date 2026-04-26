@@ -107,7 +107,7 @@ if time.time() - st.session_state.last_refresh >= REFRESH_SECONDS:
 
 
 # -------------------------------------------------
-# ESTILOS PREMIUM
+# ESTILOS
 # -------------------------------------------------
 st.markdown("""
 <style>
@@ -199,10 +199,6 @@ section[data-testid="stSidebar"] * {
     border: none;
     font-weight: 700;
 }
-
-.stAlert {
-    border-radius: 14px;
-}
 </style>
 """, unsafe_allow_html=True)
 
@@ -262,13 +258,15 @@ def calcular_metricas(y_test, pred):
     mae = mean_absolute_error(y_test, pred)
     mse = mean_squared_error(y_test, pred)
     rmse = np.sqrt(mse)
-
-    try:
-        r2 = r2_score(y_test, pred)
-    except Exception:
-        r2 = np.nan
+    r2 = r2_score(y_test, pred)
 
     return mae, mse, rmse, r2
+
+
+@st.cache_resource(show_spinner=False)
+def entrenar_mejor_modelo_cache(df_csv):
+    df = pd.read_json(df_csv)
+    return entrenar_mejor_modelo(df)
 
 
 def entrenar_mejor_modelo(df):
@@ -299,7 +297,11 @@ def entrenar_mejor_modelo(df):
         "Ridge": Ridge(alpha=1.0),
         "Lasso": Lasso(alpha=0.01, max_iter=10000),
         "Decision Tree": DecisionTreeRegressor(random_state=42),
-        "Random Forest": RandomForestRegressor(n_estimators=200, random_state=42),
+        "Random Forest": RandomForestRegressor(
+            n_estimators=80,
+            random_state=42,
+            n_jobs=-1
+        ),
         "Gradient Boosting": GradientBoostingRegressor(random_state=42),
         "KNN": make_pipeline(StandardScaler(), KNeighborsRegressor(n_neighbors=5)),
         "SVR": make_pipeline(StandardScaler(), SVR(kernel="rbf", C=100, gamma="scale"))
@@ -307,18 +309,18 @@ def entrenar_mejor_modelo(df):
 
     if XGBOOST_OK:
         modelos_ml["XGBoost"] = XGBRegressor(
-            n_estimators=300,
+            n_estimators=120,
             learning_rate=0.05,
             max_depth=4,
             subsample=0.9,
             colsample_bytree=0.9,
             random_state=42,
-            objective="reg:squarederror"
+            objective="reg:squarederror",
+            n_jobs=1
         )
 
     resultados = []
 
-    # Modelos ML
     for nombre, modelo in modelos_ml.items():
         try:
             modelo.fit(X_train, y_train)
@@ -340,11 +342,9 @@ def entrenar_mejor_modelo(df):
         except Exception:
             pass
 
-    # ARIMA y SARIMA
     if STATSMODELS_OK:
         try:
-            arima_model = ARIMA(y_train, order=(7, 1, 1))
-            arima_fit = arima_model.fit()
+            arima_fit = ARIMA(y_train, order=(2, 1, 2)).fit()
             pred_arima = arima_fit.forecast(steps=len(y_test))
             pred_arima = np.maximum(np.array(pred_arima), 0)
 
@@ -364,14 +364,14 @@ def entrenar_mejor_modelo(df):
             pass
 
         try:
-            sarima_model = SARIMAX(
+            sarima_fit = SARIMAX(
                 y_train,
                 order=(1, 1, 1),
-                seasonal_order=(1, 1, 1, 7),
+                seasonal_order=(1, 0, 1, 7),
                 enforce_stationarity=False,
                 enforce_invertibility=False
-            )
-            sarima_fit = sarima_model.fit(disp=False)
+            ).fit(disp=False)
+
             pred_sarima = sarima_fit.forecast(steps=len(y_test))
             pred_sarima = np.maximum(np.array(pred_sarima), 0)
 
@@ -390,7 +390,6 @@ def entrenar_mejor_modelo(df):
         except Exception:
             pass
 
-    # Prophet
     if PROPHET_OK:
         try:
             prophet_train = pd.DataFrame({
@@ -399,7 +398,7 @@ def entrenar_mejor_modelo(df):
             })
 
             prophet_model = Prophet(
-                daily_seasonality=True,
+                daily_seasonality=False,
                 weekly_seasonality=True,
                 yearly_seasonality=True
             )
@@ -452,19 +451,18 @@ def entrenar_mejor_modelo(df):
     nombre_mejor = mejor["modelo"]
     tipo_mejor = mejor["tipo"]
 
-    # Reentrenar el mejor modelo con toda la data
     if tipo_mejor == "ML":
         modelo_final = modelos_ml[nombre_mejor]
         modelo_final.fit(X, y)
 
     elif tipo_mejor == "ARIMA":
-        modelo_final = ARIMA(y, order=(7, 1, 1)).fit()
+        modelo_final = ARIMA(y, order=(2, 1, 2)).fit()
 
     elif tipo_mejor == "SARIMA":
         modelo_final = SARIMAX(
             y,
             order=(1, 1, 1),
-            seasonal_order=(1, 1, 1, 7),
+            seasonal_order=(1, 0, 1, 7),
             enforce_stationarity=False,
             enforce_invertibility=False
         ).fit(disp=False)
@@ -476,7 +474,7 @@ def entrenar_mejor_modelo(df):
         })
 
         modelo_final = Prophet(
-            daily_seasonality=True,
+            daily_seasonality=False,
             weekly_seasonality=True,
             yearly_seasonality=True
         )
@@ -531,9 +529,7 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 
             X_new = pd.DataFrame([nueva_fila])[features]
             pred = modelo.predict(X_new)[0]
-
-            if pred < 0:
-                pred = 0
+            pred = max(pred, 0)
 
             nueva_fila["ventas_totales"] = pred
 
@@ -623,6 +619,7 @@ if not PROPHET_OK:
 if st.sidebar.button("Actualizar ahora"):
     st.session_state.last_refresh = time.time()
     st.cache_data.clear()
+    st.cache_resource.clear()
     st.rerun()
 
 if st.sidebar.button("Cerrar sesión"):
@@ -670,7 +667,8 @@ try:
     elif "VENTA" in df.columns:
         df = df.rename(columns={"VENTA": "ventas_totales"})
     else:
-        st.error("No se encontró columna de ventas. Debe llamarse 'ventas_totales', 'TOTAL' o 'VENTA'.")
+        st.error("No se encontró columna de ventas.")
+        st.write("Debe llamarse 'ventas_totales', 'TOTAL' o 'VENTA'.")
         st.write("Columnas detectadas:", df.columns.tolist())
         st.dataframe(df.head())
         st.stop()
@@ -695,34 +693,13 @@ df = df[df["FAMILIA"].astype(str) == familia_seleccionada].copy()
 
 
 # -------------------------------------------------
-# PROCESAMIENTO
+# PROCESAMIENTO BASE
 # -------------------------------------------------
 df = preparar_datos(df)
 
 if len(df.dropna()) < 31:
     st.error("Se necesitan al menos 31 registros válidos para generar lags y entrenar el modelo.")
     st.stop()
-
-
-with st.spinner("Entrenando modelos y seleccionando el mejor..."):
-    (
-        modelo,
-        nombre_modelo,
-        tipo_modelo,
-        features,
-        split,
-        y_train,
-        y_test,
-        pred,
-        mae,
-        mse,
-        rmse,
-        r2,
-        df_model,
-        resultados_modelos
-    ) = entrenar_mejor_modelo(df)
-
-    forecast_30 = predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30)
 
 
 # -------------------------------------------------
@@ -771,6 +748,55 @@ with b7:
 with b8:
     if st.button("Forecast 30 días", use_container_width=True):
         seleccionar_seccion("forecast")
+
+
+# -------------------------------------------------
+# ENTRENAR SOLO SI SE NECESITA
+# -------------------------------------------------
+modelo = None
+nombre_modelo = None
+tipo_modelo = None
+features = None
+split = None
+y_train = None
+y_test = None
+pred = None
+mae = None
+mse = None
+rmse = None
+r2 = None
+df_model = None
+resultados_modelos = None
+forecast_30 = None
+
+if st.session_state["seccion"] in ["modelo", "forecast"]:
+    with st.spinner("Entrenando modelos y seleccionando el mejor..."):
+        df_cache = df.to_json(date_format="iso")
+
+        (
+            modelo,
+            nombre_modelo,
+            tipo_modelo,
+            features,
+            split,
+            y_train,
+            y_test,
+            pred,
+            mae,
+            mse,
+            rmse,
+            r2,
+            df_model,
+            resultados_modelos
+        ) = entrenar_mejor_modelo_cache(df_cache)
+
+        forecast_30 = predecir_30_dias(
+            df_model,
+            modelo,
+            tipo_modelo,
+            features,
+            dias=30
+        )
 
 
 # -------------------------------------------------
@@ -878,13 +904,7 @@ elif seccion == "promedio_dia":
         text_auto=".2s"
     )
 
-    fig1.update_layout(
-        template="plotly_white",
-        height=500,
-        title_font_size=20,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
+    fig1.update_layout(template="plotly_white", height=500)
     chart_container(fig1)
 
 
@@ -899,13 +919,7 @@ elif seccion == "porcentaje_dia":
         hole=0.45
     )
 
-    fig2.update_layout(
-        template="plotly_white",
-        height=500,
-        title_font_size=20,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
+    fig2.update_layout(template="plotly_white", height=500)
     chart_container(fig2)
 
 
@@ -921,13 +935,7 @@ elif seccion == "promedio_mes":
         text_auto=".2s"
     )
 
-    fig3.update_layout(
-        template="plotly_white",
-        height=500,
-        title_font_size=20,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
+    fig3.update_layout(template="plotly_white", height=500)
     chart_container(fig3)
 
 
@@ -943,13 +951,7 @@ elif seccion == "crecimiento_anual":
         labels={"year": "Año", "ventas_totales": "Ventas totales"}
     )
 
-    fig4.update_layout(
-        template="plotly_white",
-        height=500,
-        title_font_size=20,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
+    fig4.update_layout(template="plotly_white", height=500)
     chart_container(fig4)
 
     st.dataframe(ventas_anio, use_container_width=True)
@@ -966,13 +968,7 @@ elif seccion == "serie_historica":
         labels={"FECHA": "Fecha", "ventas_totales": "Ventas"}
     )
 
-    fig5.update_layout(
-        template="plotly_white",
-        height=500,
-        title_font_size=20,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
+    fig5.update_layout(template="plotly_white", height=500)
     chart_container(fig5)
 
 
@@ -1040,10 +1036,8 @@ elif seccion == "modelo":
         template="plotly_white",
         title=f"Ventas reales vs predicción del modelo - {familia_seleccionada}",
         height=500,
-        title_font_size=20,
         xaxis_title="Fecha",
-        yaxis_title="Ventas",
-        margin=dict(l=20, r=20, t=60, b=20)
+        yaxis_title="Ventas"
     )
 
     chart_container(fig6)
@@ -1072,10 +1066,8 @@ elif seccion == "forecast":
         template="plotly_white",
         title=f"Pronóstico de ventas a 30 días - {familia_seleccionada}",
         height=500,
-        title_font_size=20,
         xaxis_title="Fecha",
-        yaxis_title="Ventas",
-        margin=dict(l=20, r=20, t=60, b=20)
+        yaxis_title="Ventas"
     )
 
     chart_container(fig7)
