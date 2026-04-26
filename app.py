@@ -10,7 +10,30 @@ import plotly.graph_objects as go
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.tree import DecisionTreeRegressor
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.svm import SVR
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+
+try:
+    from xgboost import XGBRegressor
+    XGBOOST_OK = True
+except Exception:
+    XGBOOST_OK = False
+
+try:
+    from statsmodels.tsa.arima.model import ARIMA
+    from statsmodels.tsa.statespace.sarimax import SARIMAX
+    STATSMODELS_OK = True
+except Exception:
+    STATSMODELS_OK = False
+
+try:
+    from prophet import Prophet
+    PROPHET_OK = True
+except Exception:
+    PROPHET_OK = False
 
 
 # -------------------------------------------------
@@ -193,7 +216,7 @@ st.markdown(
 )
 
 st.markdown(
-    '<div class="subtitulo">Panel ejecutivo con análisis histórico, métricas clave, selector de familia y forecast automático conectado a Google Sheets.</div>',
+    '<div class="subtitulo">Panel ejecutivo con selector de familia, múltiples modelos, métricas comparativas y forecast automático.</div>',
     unsafe_allow_html=True
 )
 
@@ -233,6 +256,21 @@ def preparar_datos(df):
     return df
 
 
+def calcular_metricas(y_test, pred):
+    pred = np.maximum(pred, 0)
+
+    mae = mean_absolute_error(y_test, pred)
+    mse = mean_squared_error(y_test, pred)
+    rmse = np.sqrt(mse)
+
+    try:
+        r2 = r2_score(y_test, pred)
+    except Exception:
+        r2 = np.nan
+
+    return mae, mse, rmse, r2
+
+
 def entrenar_mejor_modelo(df):
     df_model = df.dropna().copy()
 
@@ -253,58 +291,204 @@ def entrenar_mejor_modelo(df):
     y_train = y.iloc[:split]
     y_test = y.iloc[split:]
 
-    modelos = {
+    fechas_train = df_model.iloc[:split]["FECHA"]
+    fechas_test = df_model.iloc[split:]["FECHA"]
+
+    modelos_ml = {
         "Linear Regression": LinearRegression(),
         "Ridge": Ridge(alpha=1.0),
         "Lasso": Lasso(alpha=0.01, max_iter=10000),
         "Decision Tree": DecisionTreeRegressor(random_state=42),
-        "Random Forest": RandomForestRegressor(
-            n_estimators=200,
-            random_state=42
-        ),
-        "Gradient Boosting": GradientBoostingRegressor(
-            random_state=42
-        )
+        "Random Forest": RandomForestRegressor(n_estimators=200, random_state=42),
+        "Gradient Boosting": GradientBoostingRegressor(random_state=42),
+        "KNN": make_pipeline(StandardScaler(), KNeighborsRegressor(n_neighbors=5)),
+        "SVR": make_pipeline(StandardScaler(), SVR(kernel="rbf", C=100, gamma="scale"))
     }
+
+    if XGBOOST_OK:
+        modelos_ml["XGBoost"] = XGBRegressor(
+            n_estimators=300,
+            learning_rate=0.05,
+            max_depth=4,
+            subsample=0.9,
+            colsample_bytree=0.9,
+            random_state=42,
+            objective="reg:squarederror"
+        )
 
     resultados = []
 
-    for nombre, modelo in modelos.items():
-        modelo.fit(X_train, y_train)
-        pred = modelo.predict(X_test)
+    # Modelos ML
+    for nombre, modelo in modelos_ml.items():
+        try:
+            modelo.fit(X_train, y_train)
+            pred = modelo.predict(X_test)
+            pred = np.maximum(pred, 0)
 
-        mae = mean_absolute_error(y_test, pred)
-        mse = mean_squared_error(y_test, pred)
-        rmse = np.sqrt(mse)
-        r2 = r2_score(y_test, pred)
+            mae, mse, rmse, r2 = calcular_metricas(y_test, pred)
 
-        resultados.append({
-            "modelo": nombre,
-            "objeto_modelo": modelo,
-            "pred": pred,
-            "MAE": mae,
-            "MSE": mse,
-            "RMSE": rmse,
-            "R2": r2
-        })
+            resultados.append({
+                "modelo": nombre,
+                "tipo": "ML",
+                "objeto_modelo": modelo,
+                "pred": pred,
+                "MAE": mae,
+                "MSE": mse,
+                "RMSE": rmse,
+                "R2": r2
+            })
+        except Exception:
+            pass
+
+    # ARIMA y SARIMA
+    if STATSMODELS_OK:
+        try:
+            arima_model = ARIMA(y_train, order=(7, 1, 1))
+            arima_fit = arima_model.fit()
+            pred_arima = arima_fit.forecast(steps=len(y_test))
+            pred_arima = np.maximum(np.array(pred_arima), 0)
+
+            mae, mse, rmse, r2 = calcular_metricas(y_test, pred_arima)
+
+            resultados.append({
+                "modelo": "ARIMA",
+                "tipo": "ARIMA",
+                "objeto_modelo": arima_fit,
+                "pred": pred_arima,
+                "MAE": mae,
+                "MSE": mse,
+                "RMSE": rmse,
+                "R2": r2
+            })
+        except Exception:
+            pass
+
+        try:
+            sarima_model = SARIMAX(
+                y_train,
+                order=(1, 1, 1),
+                seasonal_order=(1, 1, 1, 7),
+                enforce_stationarity=False,
+                enforce_invertibility=False
+            )
+            sarima_fit = sarima_model.fit(disp=False)
+            pred_sarima = sarima_fit.forecast(steps=len(y_test))
+            pred_sarima = np.maximum(np.array(pred_sarima), 0)
+
+            mae, mse, rmse, r2 = calcular_metricas(y_test, pred_sarima)
+
+            resultados.append({
+                "modelo": "SARIMA",
+                "tipo": "SARIMA",
+                "objeto_modelo": sarima_fit,
+                "pred": pred_sarima,
+                "MAE": mae,
+                "MSE": mse,
+                "RMSE": rmse,
+                "R2": r2
+            })
+        except Exception:
+            pass
+
+    # Prophet
+    if PROPHET_OK:
+        try:
+            prophet_train = pd.DataFrame({
+                "ds": fechas_train,
+                "y": y_train.values
+            })
+
+            prophet_model = Prophet(
+                daily_seasonality=True,
+                weekly_seasonality=True,
+                yearly_seasonality=True
+            )
+
+            prophet_model.fit(prophet_train)
+
+            prophet_future = pd.DataFrame({
+                "ds": fechas_test
+            })
+
+            prophet_forecast = prophet_model.predict(prophet_future)
+            pred_prophet = prophet_forecast["yhat"].values
+            pred_prophet = np.maximum(pred_prophet, 0)
+
+            mae, mse, rmse, r2 = calcular_metricas(y_test, pred_prophet)
+
+            resultados.append({
+                "modelo": "Prophet",
+                "tipo": "PROPHET",
+                "objeto_modelo": prophet_model,
+                "pred": pred_prophet,
+                "MAE": mae,
+                "MSE": mse,
+                "RMSE": rmse,
+                "R2": r2
+            })
+        except Exception:
+            pass
+
+    if len(resultados) == 0:
+        st.error("No se pudo entrenar ningún modelo.")
+        st.stop()
 
     resultados_df = pd.DataFrame(resultados)
 
     resultados_df["rank_RMSE"] = resultados_df["RMSE"].rank(method="min", ascending=True)
     resultados_df["rank_MAE"] = resultados_df["MAE"].rank(method="min", ascending=True)
+    resultados_df["rank_MSE"] = resultados_df["MSE"].rank(method="min", ascending=True)
     resultados_df["rank_R2"] = resultados_df["R2"].rank(method="min", ascending=False)
 
     resultados_df["score_final"] = (
         resultados_df["rank_RMSE"] +
         resultados_df["rank_MAE"] +
+        resultados_df["rank_MSE"] +
         resultados_df["rank_R2"]
     )
 
     mejor = resultados_df.sort_values("score_final").iloc[0]
 
+    nombre_mejor = mejor["modelo"]
+    tipo_mejor = mejor["tipo"]
+
+    # Reentrenar el mejor modelo con toda la data
+    if tipo_mejor == "ML":
+        modelo_final = modelos_ml[nombre_mejor]
+        modelo_final.fit(X, y)
+
+    elif tipo_mejor == "ARIMA":
+        modelo_final = ARIMA(y, order=(7, 1, 1)).fit()
+
+    elif tipo_mejor == "SARIMA":
+        modelo_final = SARIMAX(
+            y,
+            order=(1, 1, 1),
+            seasonal_order=(1, 1, 1, 7),
+            enforce_stationarity=False,
+            enforce_invertibility=False
+        ).fit(disp=False)
+
+    elif tipo_mejor == "PROPHET":
+        prophet_full = pd.DataFrame({
+            "ds": df_model["FECHA"],
+            "y": y.values
+        })
+
+        modelo_final = Prophet(
+            daily_seasonality=True,
+            weekly_seasonality=True,
+            yearly_seasonality=True
+        )
+        modelo_final.fit(prophet_full)
+
+    else:
+        modelo_final = mejor["objeto_modelo"]
+
     return (
-        mejor["objeto_modelo"],
-        mejor["modelo"],
+        modelo_final,
+        nombre_mejor,
+        tipo_mejor,
         features,
         split,
         y_train,
@@ -319,50 +503,86 @@ def entrenar_mejor_modelo(df):
     )
 
 
-def predecir_30_dias(df_model, modelo, features, dias=30):
-    df_future = df_model.copy()
-    predicciones = []
+def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
+    if tipo_modelo == "ML":
+        df_future = df_model.copy()
+        predicciones = []
 
-    for _ in range(dias):
-        ultima_fecha = df_future["FECHA"].iloc[-1]
-        nueva_fecha = ultima_fecha + pd.Timedelta(days=1)
+        for _ in range(dias):
+            ultima_fecha = df_future["FECHA"].iloc[-1]
+            nueva_fecha = ultima_fecha + pd.Timedelta(days=1)
 
-        nueva_fila = {
-            "FECHA": nueva_fecha,
-            "ventas_totales": np.nan,
-            "year": nueva_fecha.year,
-            "month": nueva_fecha.month,
-            "month_name": nueva_fecha.month_name(),
-            "day_of_week": nueva_fecha.dayofweek,
-            "dia_nombre": nueva_fecha.day_name(),
-            "fin_semana": 1 if nueva_fecha.dayofweek >= 5 else 0,
-            "lag_1": df_future["ventas_totales"].iloc[-1],
-            "lag_7": df_future["ventas_totales"].iloc[-7],
-            "lag_14": df_future["ventas_totales"].iloc[-14],
-            "lag_30": df_future["ventas_totales"].iloc[-30],
-            "media_7": df_future["ventas_totales"].tail(7).mean(),
-            "media_30": df_future["ventas_totales"].tail(30).mean()
-        }
+            nueva_fila = {
+                "FECHA": nueva_fecha,
+                "ventas_totales": np.nan,
+                "year": nueva_fecha.year,
+                "month": nueva_fecha.month,
+                "month_name": nueva_fecha.month_name(),
+                "day_of_week": nueva_fecha.dayofweek,
+                "dia_nombre": nueva_fecha.day_name(),
+                "fin_semana": 1 if nueva_fecha.dayofweek >= 5 else 0,
+                "lag_1": df_future["ventas_totales"].iloc[-1],
+                "lag_7": df_future["ventas_totales"].iloc[-7],
+                "lag_14": df_future["ventas_totales"].iloc[-14],
+                "lag_30": df_future["ventas_totales"].iloc[-30],
+                "media_7": df_future["ventas_totales"].tail(7).mean(),
+                "media_30": df_future["ventas_totales"].tail(30).mean()
+            }
 
-        X_new = pd.DataFrame([nueva_fila])[features]
-        pred = modelo.predict(X_new)[0]
+            X_new = pd.DataFrame([nueva_fila])[features]
+            pred = modelo.predict(X_new)[0]
 
-        if pred < 0:
-            pred = 0
+            if pred < 0:
+                pred = 0
 
-        nueva_fila["ventas_totales"] = pred
+            nueva_fila["ventas_totales"] = pred
 
-        predicciones.append({
-            "FECHA": nueva_fecha,
-            "ventas_predichas": round(pred, 2)
-        })
+            predicciones.append({
+                "FECHA": nueva_fecha,
+                "ventas_predichas": round(pred, 2)
+            })
 
-        df_future = pd.concat(
-            [df_future, pd.DataFrame([nueva_fila])],
-            ignore_index=True
+            df_future = pd.concat(
+                [df_future, pd.DataFrame([nueva_fila])],
+                ignore_index=True
+            )
+
+        return pd.DataFrame(predicciones)
+
+    elif tipo_modelo in ["ARIMA", "SARIMA"]:
+        ultima_fecha = df_model["FECHA"].iloc[-1]
+        fechas_futuras = pd.date_range(
+            start=ultima_fecha + pd.Timedelta(days=1),
+            periods=dias,
+            freq="D"
         )
 
-    return pd.DataFrame(predicciones)
+        pred = modelo.forecast(steps=dias)
+        pred = np.maximum(np.array(pred), 0)
+
+        return pd.DataFrame({
+            "FECHA": fechas_futuras,
+            "ventas_predichas": np.round(pred, 2)
+        })
+
+    elif tipo_modelo == "PROPHET":
+        ultima_fecha = df_model["FECHA"].iloc[-1]
+        fechas_futuras = pd.date_range(
+            start=ultima_fecha + pd.Timedelta(days=1),
+            periods=dias,
+            freq="D"
+        )
+
+        future = pd.DataFrame({"ds": fechas_futuras})
+        forecast = modelo.predict(future)
+
+        pred = forecast["yhat"].values
+        pred = np.maximum(pred, 0)
+
+        return pd.DataFrame({
+            "FECHA": fechas_futuras,
+            "ventas_predichas": np.round(pred, 2)
+        })
 
 
 def card_kpi(titulo, valor):
@@ -390,6 +610,15 @@ def seleccionar_seccion(nombre):
 st.sidebar.header("Datos en la nube")
 st.sidebar.success("Conectado a Google Sheets")
 st.sidebar.info("Actualización automática cada 60 segundos")
+
+if not XGBOOST_OK:
+    st.sidebar.warning("XGBoost no está instalado.")
+
+if not STATSMODELS_OK:
+    st.sidebar.warning("Statsmodels no está instalado. ARIMA/SARIMA no se usarán.")
+
+if not PROPHET_OK:
+    st.sidebar.warning("Prophet no está instalado.")
 
 if st.sidebar.button("Actualizar ahora"):
     st.session_state.last_refresh = time.time()
@@ -475,23 +704,25 @@ if len(df.dropna()) < 31:
     st.stop()
 
 
-(
-    modelo,
-    nombre_modelo,
-    features,
-    split,
-    y_train,
-    y_test,
-    pred,
-    mae,
-    mse,
-    rmse,
-    r2,
-    df_model,
-    resultados_modelos
-) = entrenar_mejor_modelo(df)
+with st.spinner("Entrenando modelos y seleccionando el mejor..."):
+    (
+        modelo,
+        nombre_modelo,
+        tipo_modelo,
+        features,
+        split,
+        y_train,
+        y_test,
+        pred,
+        mae,
+        mse,
+        rmse,
+        r2,
+        df_model,
+        resultados_modelos
+    ) = entrenar_mejor_modelo(df)
 
-forecast_30 = predecir_30_dias(df_model, modelo, features, dias=30)
+    forecast_30 = predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30)
 
 
 # -------------------------------------------------
@@ -750,10 +981,10 @@ elif seccion == "modelo":
 
     st.success(
         f"Mejor modelo seleccionado para {familia_seleccionada}: {nombre_modelo} "
-        f"| MAE: {mae:,.2f} | RMSE: {rmse:,.2f} | R²: {r2:.3f}"
+        f"| MAE: {mae:,.2f} | MSE: {mse:,.2f} | RMSE: {rmse:,.2f} | R²: {r2:.3f}"
     )
 
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
 
     with m1:
         card_kpi("Modelo ganador", nombre_modelo)
@@ -762,9 +993,12 @@ elif seccion == "modelo":
         card_kpi("MAE", f"{mae:,.2f}")
 
     with m3:
-        card_kpi("RMSE", f"{rmse:,.2f}")
+        card_kpi("MSE", f"{mse:,.2f}")
 
     with m4:
+        card_kpi("RMSE", f"{rmse:,.2f}")
+
+    with m5:
         card_kpi("R²", f"{r2:.3f}")
 
     st.markdown('<div class="section-title">Ranking de modelos</div>', unsafe_allow_html=True)
@@ -831,7 +1065,7 @@ elif seccion == "forecast":
         x=forecast_30["FECHA"],
         y=forecast_30["ventas_predichas"],
         mode="lines+markers",
-        name="Forecast 30 días"
+        name=f"Forecast 30 días - {nombre_modelo}"
     ))
 
     fig7.update_layout(
