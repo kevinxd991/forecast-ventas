@@ -22,6 +22,52 @@ st.set_page_config(
 
 
 # -------------------------------------------------
+# LOGIN
+# -------------------------------------------------
+def login():
+    st.markdown("""
+    <style>
+    .login-title {
+        font-size: 2.4rem;
+        font-weight: 850;
+        color: #0F172A;
+        text-align: center;
+        margin-top: 4rem;
+    }
+    .login-subtitle {
+        text-align: center;
+        color: #64748B;
+        margin-bottom: 2rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="login-title">Acceso al Dashboard</div>', unsafe_allow_html=True)
+    st.markdown('<div class="login-subtitle">Ingrese sus credenciales para continuar</div>', unsafe_allow_html=True)
+
+    col1, col2, col3 = st.columns([1, 1.2, 1])
+
+    with col2:
+        usuario = st.text_input("ID")
+        password = st.text_input("Contraseña", type="password")
+
+        if st.button("Ingresar", use_container_width=True):
+            if usuario == "admin" and password == "123":
+                st.session_state["logueado"] = True
+                st.rerun()
+            else:
+                st.error("ID o contraseña incorrectos")
+
+
+if "logueado" not in st.session_state:
+    st.session_state["logueado"] = False
+
+if not st.session_state["logueado"]:
+    login()
+    st.stop()
+
+
+# -------------------------------------------------
 # AUTOACTUALIZACIÓN
 # -------------------------------------------------
 REFRESH_SECONDS = 60
@@ -36,7 +82,7 @@ if time.time() - st.session_state.last_refresh >= REFRESH_SECONDS:
 
 
 # -------------------------------------------------
-# ESTILOS PREMIUM
+# ESTILOS
 # -------------------------------------------------
 st.markdown("""
 <style>
@@ -128,14 +174,13 @@ section[data-testid="stSidebar"] * {
     border: none;
     font-weight: 700;
 }
-
-.stAlert {
-    border-radius: 14px;
-}
 </style>
 """, unsafe_allow_html=True)
 
 
+# -------------------------------------------------
+# TÍTULO
+# -------------------------------------------------
 st.markdown(
     '<div class="titulo-principal">Dashboard de Predicción de Ventas - Familia FRUTA</div>',
     unsafe_allow_html=True
@@ -273,6 +318,10 @@ def chart_container(fig):
     st.markdown('</div>', unsafe_allow_html=True)
 
 
+def seleccionar_seccion(nombre):
+    st.session_state["seccion"] = nombre
+
+
 # -------------------------------------------------
 # SIDEBAR
 # -------------------------------------------------
@@ -283,6 +332,10 @@ st.sidebar.info("Actualización automática cada 60 segundos")
 if st.sidebar.button("Actualizar ahora"):
     st.session_state.last_refresh = time.time()
     st.cache_data.clear()
+    st.rerun()
+
+if st.sidebar.button("Cerrar sesión"):
+    st.session_state["logueado"] = False
     st.rerun()
 
 st.sidebar.caption(
@@ -337,34 +390,58 @@ if len(df.dropna()) < 31:
     st.stop()
 
 
-# -------------------------------------------------
-# KPIS
-# -------------------------------------------------
-st.markdown('<div class="section-title">Resumen ejecutivo</div>', unsafe_allow_html=True)
-
-k1, k2, k3, k4, k5 = st.columns(5)
-
-with k1:
-    card_kpi("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
-
-with k2:
-    card_kpi("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
-
-with k3:
-    card_kpi("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
-
-with k4:
-    card_kpi("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
-
-with k5:
-    card_kpi("Última fecha", str(df["FECHA"].max().date()))
+modelo, features, split, y_train, y_test, pred, mae, mse, rmse, r2, df_model = entrenar_modelo(df)
+forecast_30 = predecir_30_dias(df_model, modelo, features, dias=30)
 
 
 # -------------------------------------------------
-# ESTADÍSTICAS DESCRIPTIVAS
+# MENÚ DE BOTONES
 # -------------------------------------------------
-st.markdown('<div class="section-title">Estadísticas descriptivas</div>', unsafe_allow_html=True)
+if "seccion" not in st.session_state:
+    st.session_state["seccion"] = "inicio"
 
+st.markdown('<div class="section-title">Seleccione qué desea visualizar</div>', unsafe_allow_html=True)
+
+b1, b2, b3, b4 = st.columns(4)
+
+with b1:
+    if st.button("Resumen ejecutivo", use_container_width=True):
+        seleccionar_seccion("resumen")
+
+with b2:
+    if st.button("Promedio por día", use_container_width=True):
+        seleccionar_seccion("promedio_dia")
+
+with b3:
+    if st.button("Porcentaje por día", use_container_width=True):
+        seleccionar_seccion("porcentaje_dia")
+
+with b4:
+    if st.button("Promedio por mes", use_container_width=True):
+        seleccionar_seccion("promedio_mes")
+
+b5, b6, b7, b8 = st.columns(4)
+
+with b5:
+    if st.button("Crecimiento anual", use_container_width=True):
+        seleccionar_seccion("crecimiento_anual")
+
+with b6:
+    if st.button("Serie histórica", use_container_width=True):
+        seleccionar_seccion("serie_historica")
+
+with b7:
+    if st.button("Modelo predictivo", use_container_width=True):
+        seleccionar_seccion("modelo")
+
+with b8:
+    if st.button("Forecast 30 días", use_container_width=True):
+        seleccionar_seccion("forecast")
+
+
+# -------------------------------------------------
+# DATAFRAMES AUXILIARES
+# -------------------------------------------------
 orden_dias = [
     "Monday", "Tuesday", "Wednesday",
     "Thursday", "Friday", "Saturday", "Sunday"
@@ -401,46 +478,6 @@ pct_dia["dia_nombre"] = pd.Categorical(
 
 pct_dia = pct_dia.sort_values("dia_nombre")
 
-c1, c2 = st.columns(2)
-
-with c1:
-    fig1 = px.bar(
-        ventas_dia,
-        x="dia_nombre",
-        y="promedio_ventas",
-        title="Promedio de ventas por día",
-        labels={"dia_nombre": "Día", "promedio_ventas": "Promedio de ventas"},
-        text_auto=".2s"
-    )
-
-    fig1.update_layout(
-        template="plotly_white",
-        height=430,
-        title_font_size=20,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
-    chart_container(fig1)
-
-with c2:
-    fig2 = px.pie(
-        pct_dia,
-        names="dia_nombre",
-        values="porcentaje",
-        title="Participación porcentual por día",
-        hole=0.45
-    )
-
-    fig2.update_layout(
-        template="plotly_white",
-        height=430,
-        title_font_size=20,
-        margin=dict(l=20, r=20, t=60, b=20)
-    )
-
-    chart_container(fig2)
-
-
 orden_meses = [
     "January", "February", "March", "April",
     "May", "June", "July", "August",
@@ -464,9 +501,83 @@ ventas_mes = ventas_mes.sort_values("month_name")
 ventas_anio = df.groupby("year", as_index=False)["ventas_totales"].sum()
 ventas_anio["crecimiento_%"] = ventas_anio["ventas_totales"].pct_change() * 100
 
-c3, c4 = st.columns(2)
 
-with c3:
+# -------------------------------------------------
+# SECCIONES
+# -------------------------------------------------
+seccion = st.session_state["seccion"]
+
+if seccion == "inicio":
+    st.info("Seleccione un botón para visualizar una sección del dashboard.")
+
+
+elif seccion == "resumen":
+    st.markdown('<div class="section-title">Resumen ejecutivo</div>', unsafe_allow_html=True)
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+
+    with k1:
+        card_kpi("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
+
+    with k2:
+        card_kpi("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
+
+    with k3:
+        card_kpi("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
+
+    with k4:
+        card_kpi("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
+
+    with k5:
+        card_kpi("Última fecha", str(df["FECHA"].max().date()))
+
+
+elif seccion == "promedio_dia":
+    st.markdown('<div class="section-title">Promedio de ventas por día</div>', unsafe_allow_html=True)
+
+    fig1 = px.bar(
+        ventas_dia,
+        x="dia_nombre",
+        y="promedio_ventas",
+        title="Promedio de ventas por día",
+        labels={"dia_nombre": "Día", "promedio_ventas": "Promedio de ventas"},
+        text_auto=".2s"
+    )
+
+    fig1.update_layout(
+        template="plotly_white",
+        height=500,
+        title_font_size=20,
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig1)
+
+
+elif seccion == "porcentaje_dia":
+    st.markdown('<div class="section-title">Participación porcentual por día</div>', unsafe_allow_html=True)
+
+    fig2 = px.pie(
+        pct_dia,
+        names="dia_nombre",
+        values="porcentaje",
+        title="Participación porcentual por día",
+        hole=0.45
+    )
+
+    fig2.update_layout(
+        template="plotly_white",
+        height=500,
+        title_font_size=20,
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig2)
+
+
+elif seccion == "promedio_mes":
+    st.markdown('<div class="section-title">Promedio de ventas por mes</div>', unsafe_allow_html=True)
+
     fig3 = px.bar(
         ventas_mes,
         x="month_name",
@@ -478,14 +589,17 @@ with c3:
 
     fig3.update_layout(
         template="plotly_white",
-        height=430,
+        height=500,
         title_font_size=20,
         margin=dict(l=20, r=20, t=60, b=20)
     )
 
     chart_container(fig3)
 
-with c4:
+
+elif seccion == "crecimiento_anual":
+    st.markdown('<div class="section-title">Crecimiento histórico por año</div>', unsafe_allow_html=True)
+
     fig4 = px.line(
         ventas_anio,
         x="year",
@@ -497,144 +611,134 @@ with c4:
 
     fig4.update_layout(
         template="plotly_white",
-        height=430,
+        height=500,
         title_font_size=20,
         margin=dict(l=20, r=20, t=60, b=20)
     )
 
     chart_container(fig4)
 
-
-# -------------------------------------------------
-# SERIE HISTÓRICA
-# -------------------------------------------------
-st.markdown('<div class="section-title">Serie histórica de ventas</div>', unsafe_allow_html=True)
-
-fig5 = px.line(
-    df,
-    x="FECHA",
-    y="ventas_totales",
-    title="Comportamiento histórico de ventas",
-    labels={"FECHA": "Fecha", "ventas_totales": "Ventas"}
-)
-
-fig5.update_layout(
-    template="plotly_white",
-    height=500,
-    title_font_size=20,
-    margin=dict(l=20, r=20, t=60, b=20)
-)
-
-chart_container(fig5)
+    st.dataframe(ventas_anio, use_container_width=True)
 
 
-# -------------------------------------------------
-# MODELO
-# -------------------------------------------------
-modelo, features, split, y_train, y_test, pred, mae, mse, rmse, r2, df_model = entrenar_modelo(df)
+elif seccion == "serie_historica":
+    st.markdown('<div class="section-title">Serie histórica de ventas</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">Resumen del modelo predictivo</div>', unsafe_allow_html=True)
+    fig5 = px.line(
+        df,
+        x="FECHA",
+        y="ventas_totales",
+        title="Comportamiento histórico de ventas",
+        labels={"FECHA": "Fecha", "ventas_totales": "Ventas"}
+    )
 
-m1, m2, m3, m4 = st.columns(4)
+    fig5.update_layout(
+        template="plotly_white",
+        height=500,
+        title_font_size=20,
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
 
-with m1:
-    card_kpi("MAE", f"{mae:,.2f}")
-
-with m2:
-    card_kpi("MSE", f"{mse:,.2f}")
-
-with m3:
-    card_kpi("RMSE", f"{rmse:,.2f}")
-
-with m4:
-    card_kpi("R²", f"{r2:.3f}")
-
-
-st.markdown('<div class="section-title">Comparación real vs predicción</div>', unsafe_allow_html=True)
-
-fechas_train = df_model.iloc[:split]["FECHA"]
-fechas_test = df_model.iloc[split:]["FECHA"]
-
-fig6 = go.Figure()
-
-fig6.add_trace(go.Scatter(
-    x=fechas_train,
-    y=y_train.values,
-    mode="lines",
-    name="Train real"
-))
-
-fig6.add_trace(go.Scatter(
-    x=fechas_test,
-    y=y_test.values,
-    mode="lines",
-    name="Test real"
-))
-
-fig6.add_trace(go.Scatter(
-    x=fechas_test,
-    y=pred,
-    mode="lines",
-    name="Predicción"
-))
-
-fig6.update_layout(
-    template="plotly_white",
-    title="Ventas reales vs predicción del modelo",
-    height=500,
-    title_font_size=20,
-    xaxis_title="Fecha",
-    yaxis_title="Ventas",
-    margin=dict(l=20, r=20, t=60, b=20)
-)
-
-chart_container(fig6)
+    chart_container(fig5)
 
 
-# -------------------------------------------------
-# FORECAST 30 DÍAS
-# -------------------------------------------------
-forecast_30 = predecir_30_dias(df_model, modelo, features, dias=30)
+elif seccion == "modelo":
+    st.markdown('<div class="section-title">Resumen del modelo predictivo</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">Proyección de los próximos 30 días</div>', unsafe_allow_html=True)
+    m1, m2, m3, m4 = st.columns(4)
 
-fig7 = go.Figure()
+    with m1:
+        card_kpi("MAE", f"{mae:,.2f}")
 
-fig7.add_trace(go.Scatter(
-    x=df["FECHA"].tail(90),
-    y=df["ventas_totales"].tail(90),
-    mode="lines",
-    name="Histórico reciente"
-))
+    with m2:
+        card_kpi("MSE", f"{mse:,.2f}")
 
-fig7.add_trace(go.Scatter(
-    x=forecast_30["FECHA"],
-    y=forecast_30["ventas_predichas"],
-    mode="lines+markers",
-    name="Forecast 30 días"
-))
+    with m3:
+        card_kpi("RMSE", f"{rmse:,.2f}")
 
-fig7.update_layout(
-    template="plotly_white",
-    title="Pronóstico de ventas a 30 días",
-    height=500,
-    title_font_size=20,
-    xaxis_title="Fecha",
-    yaxis_title="Ventas",
-    margin=dict(l=20, r=20, t=60, b=20)
-)
+    with m4:
+        card_kpi("R²", f"{r2:.3f}")
 
-chart_container(fig7)
+    st.markdown('<div class="section-title">Comparación real vs predicción</div>', unsafe_allow_html=True)
+
+    fechas_train = df_model.iloc[:split]["FECHA"]
+    fechas_test = df_model.iloc[split:]["FECHA"]
+
+    fig6 = go.Figure()
+
+    fig6.add_trace(go.Scatter(
+        x=fechas_train,
+        y=y_train.values,
+        mode="lines",
+        name="Train real"
+    ))
+
+    fig6.add_trace(go.Scatter(
+        x=fechas_test,
+        y=y_test.values,
+        mode="lines",
+        name="Test real"
+    ))
+
+    fig6.add_trace(go.Scatter(
+        x=fechas_test,
+        y=pred,
+        mode="lines",
+        name="Predicción"
+    ))
+
+    fig6.update_layout(
+        template="plotly_white",
+        title="Ventas reales vs predicción del modelo",
+        height=500,
+        title_font_size=20,
+        xaxis_title="Fecha",
+        yaxis_title="Ventas",
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig6)
 
 
-st.markdown('<div class="section-title">Tabla de pronóstico</div>', unsafe_allow_html=True)
-st.dataframe(forecast_30, use_container_width=True)
+elif seccion == "forecast":
+    st.markdown('<div class="section-title">Proyección de los próximos 30 días</div>', unsafe_allow_html=True)
 
-csv = forecast_30.to_csv(index=False).encode("utf-8")
+    fig7 = go.Figure()
 
-st.download_button(
-    label="Descargar forecast en CSV",
-    data=csv,
-    file_name="forecast_30_dias_fruta.csv",
-    mime="text/csv"
-)
+    fig7.add_trace(go.Scatter(
+        x=df["FECHA"].tail(90),
+        y=df["ventas_totales"].tail(90),
+        mode="lines",
+        name="Histórico reciente"
+    ))
+
+    fig7.add_trace(go.Scatter(
+        x=forecast_30["FECHA"],
+        y=forecast_30["ventas_predichas"],
+        mode="lines+markers",
+        name="Forecast 30 días"
+    ))
+
+    fig7.update_layout(
+        template="plotly_white",
+        title="Pronóstico de ventas a 30 días",
+        height=500,
+        title_font_size=20,
+        xaxis_title="Fecha",
+        yaxis_title="Ventas",
+        margin=dict(l=20, r=20, t=60, b=20)
+    )
+
+    chart_container(fig7)
+
+    st.markdown('<div class="section-title">Tabla de pronóstico</div>', unsafe_allow_html=True)
+    st.dataframe(forecast_30, use_container_width=True)
+
+    csv = forecast_30.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label="Descargar forecast en CSV",
+        data=csv,
+        file_name="forecast_30_dias_fruta.csv",
+        mime="text/csv"
+    )
