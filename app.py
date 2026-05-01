@@ -112,42 +112,55 @@ if time.time() - st.session_state.last_refresh >= REFRESH_SECONDS:
 # -------------------------------------------------
 st.markdown("""
 <style>
+
+/* FONDO GENERAL */
 .stApp {
-    background: linear-gradient(135deg, #F8FAFC 0%, #EEF2F7 100%);
+    background: linear-gradient(135deg, #020617 0%, #0F172A 100%);
 }
 
+/* CONTENEDOR */
 .block-container {
     padding-top: 2rem;
     padding-bottom: 3rem;
     max-width: 1450px;
 }
 
+/* TÍTULOS */
 .titulo-principal {
     font-size: 2.7rem;
     font-weight: 850;
-    color: #0F172A;
+    color: #F9FAFB;
     margin-bottom: 0.2rem;
     letter-spacing: -0.03em;
 }
 
 .subtitulo {
     font-size: 1.05rem;
-    color: #64748B;
+    color: #94A3B8;
     margin-bottom: 2rem;
 }
 
+.section-title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: #F9FAFB;
+    margin-top: 2rem;
+    margin-bottom: 1rem;
+}
+
+/* TARJETAS KPI */
 .card {
-    background: white;
+    background: #111827;
     padding: 1.35rem;
     border-radius: 20px;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
-    border: 1px solid #E2E8F0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.05);
     min-height: 120px;
 }
 
 .kpi-title {
     font-size: 0.82rem;
-    color: #64748B;
+    color: #94A3B8;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.04em;
@@ -155,36 +168,31 @@ st.markdown("""
 
 .kpi-value {
     font-size: 1.7rem;
-    color: #0F172A;
+    color: #F9FAFB;
     font-weight: 850;
     margin-top: 0.4rem;
 }
 
-.section-title {
-    font-size: 1.55rem;
-    font-weight: 800;
-    color: #0F172A;
-    margin-top: 2rem;
-    margin-bottom: 1rem;
-}
-
+/* CONTENEDOR DE GRÁFICOS */
 .chart-card {
-    background: white;
+    background: #111827;
     padding: 1.2rem;
     border-radius: 20px;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, 0.07);
-    border: 1px solid #E2E8F0;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.05);
     margin-bottom: 1.2rem;
 }
 
+/* SIDEBAR */
 section[data-testid="stSidebar"] {
-    background: #0F172A;
+    background: #020617;
 }
 
 section[data-testid="stSidebar"] * {
     color: white !important;
 }
 
+/* BOTONES */
 .stButton button {
     border-radius: 12px;
     background: #2563EB;
@@ -195,19 +203,51 @@ section[data-testid="stSidebar"] * {
 
 .stDownloadButton button {
     border-radius: 12px;
-    background: #0F172A;
+    background: #111827;
     color: white;
     border: none;
     font-weight: 700;
 }
 
+/* ALERTAS */
 .stAlert {
     border-radius: 14px;
 }
+
+/* INPUTS */
+input, textarea {
+    background-color: #020617 !important;
+    color: white !important;
+}
+
+/* SELECTBOX */
+div[data-baseweb="select"] > div {
+    background-color: #020617 !important;
+    color: white !important;
+}
+
+/* DATAFRAME */
+.stDataFrame {
+    background-color: #020617;
+    color: white;
+}
+
+/* SCROLL */
+::-webkit-scrollbar {
+    width: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: #020617;
+}
+
+::-webkit-scrollbar-thumb {
+    background: #334155;
+    border-radius: 10px;
+}
+
 </style>
 """, unsafe_allow_html=True)
-
-
 # -------------------------------------------------
 # TÍTULO
 # -------------------------------------------------
