@@ -7,6 +7,8 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from supabase import create_client
+
 from sklearn.ensemble import (
     ExtraTreesRegressor,
     GradientBoostingRegressor,
@@ -22,7 +24,6 @@ from sklearn.tree import DecisionTreeRegressor
 
 try:
     from xgboost import XGBRegressor
-
     XGBOOST_OK = True
 except Exception:
     XGBOOST_OK = False
@@ -30,14 +31,12 @@ except Exception:
 try:
     from statsmodels.tsa.arima.model import ARIMA
     from statsmodels.tsa.statespace.sarimax import SARIMAX
-
     STATSMODELS_OK = True
 except Exception:
     STATSMODELS_OK = False
 
 try:
     from prophet import Prophet
-
     PROPHET_OK = True
 except Exception:
     PROPHET_OK = False
@@ -54,7 +53,17 @@ st.set_page_config(
 
 
 # -------------------------------------------------
-# LOGIN
+# CONEXION SUPABASE
+# -------------------------------------------------
+@st.cache_resource
+def conectar_supabase():
+    url = st.secrets["supabase"]["url"]
+    key = st.secrets["supabase"]["key"]
+    return create_client(url, key)
+
+
+# -------------------------------------------------
+# LOGIN CON SUPABASE
 # -------------------------------------------------
 def login():
     st.markdown(
@@ -76,26 +85,51 @@ def login():
         """,
         unsafe_allow_html=True,
     )
+
     st.markdown(
         '<div class="login-title">Acceso al Dashboard</div>',
         unsafe_allow_html=True,
     )
+
     st.markdown(
         '<div class="login-subtitle">Ingrese sus credenciales para continuar</div>',
         unsafe_allow_html=True,
     )
 
     col1, col2, col3 = st.columns([1, 1.2, 1])
+
     with col2:
         usuario = st.text_input("ID")
         password = st.text_input("Contraseña", type="password")
 
         if st.button("Ingresar", use_container_width=True):
-            if usuario == "admin" and password == "123":
-                st.session_state["logueado"] = True
-                st.rerun()
-            else:
-                st.error("ID o contraseña incorrectos")
+            try:
+                supabase = conectar_supabase()
+
+                response = (
+                    supabase
+                    .table("usuarios")
+                    .select("id_usuario, usuario, password, sede")
+                    .eq("usuario", usuario)
+                    .eq("password", password)
+                    .limit(1)
+                    .execute()
+                )
+
+                if response.data and len(response.data) > 0:
+                    datos_usuario = response.data[0]
+
+                    st.session_state["logueado"] = True
+                    st.session_state["usuario"] = datos_usuario["usuario"]
+                    st.session_state["sede"] = datos_usuario["sede"]
+
+                    st.rerun()
+                else:
+                    st.error("ID o contraseña incorrectos")
+
+            except Exception as e:
+                st.error("Error al conectar con Supabase.")
+                st.write(e)
 
 
 if "logueado" not in st.session_state:
@@ -228,14 +262,52 @@ st.markdown(
 # FUNCIONES BASE
 # -------------------------------------------------
 @st.cache_data(ttl=60)
-def cargar_datos_google_sheets(url):
-    return pd.read_csv(url)
+def cargar_datos_supabase(sede_usuario):
+    supabase = conectar_supabase()
+
+    registros = []
+    inicio = 0
+    limite = 1000
+
+    while True:
+        fin = inicio + limite - 1
+
+        response = (
+            supabase
+            .table("ventas")
+            .select("*")
+            .eq("Sede", sede_usuario)
+            .order("id_venta")
+            .range(inicio, fin)
+            .execute()
+        )
+
+        data = response.data or []
+
+        if len(data) == 0:
+            break
+
+        registros.extend(data)
+
+        if len(data) < limite:
+            break
+
+        inicio += limite
+
+    df = pd.DataFrame(registros)
+
+    if df.empty:
+        raise ValueError(f"No hay ventas registradas para la sede: {sede_usuario}")
+
+    return df
 
 
 def preparar_datos(df):
     df = df.copy()
+
     df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
     df["ventas_totales"] = pd.to_numeric(df["ventas_totales"], errors="coerce")
+
     df = df.dropna(subset=["FECHA", "ventas_totales"])
     df = df.sort_values("FECHA").reset_index(drop=True)
 
@@ -371,6 +443,7 @@ def entrenar_mejor_modelo(df):
             pred = modelo.predict(X_test)
             pred = np.maximum(pred, 0)
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred)
+
             resultados.append(
                 {
                     "modelo": nombre,
@@ -392,6 +465,7 @@ def entrenar_mejor_modelo(df):
             pred_arima = arima_fit.forecast(steps=len(y_test))
             pred_arima = np.maximum(np.array(pred_arima), 0)
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred_arima)
+
             resultados.append(
                 {
                     "modelo": "ARIMA",
@@ -415,9 +489,11 @@ def entrenar_mejor_modelo(df):
                 enforce_stationarity=False,
                 enforce_invertibility=False,
             ).fit(disp=False)
+
             pred_sarima = sarima_fit.forecast(steps=len(y_test))
             pred_sarima = np.maximum(np.array(pred_sarima), 0)
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred_sarima)
+
             resultados.append(
                 {
                     "modelo": "SARIMA",
@@ -441,12 +517,15 @@ def entrenar_mejor_modelo(df):
                 weekly_seasonality=True,
                 yearly_seasonality=True,
             )
+
             prophet_model.fit(prophet_train)
+
             prophet_future = pd.DataFrame({"ds": fechas_test})
             prophet_forecast = prophet_model.predict(prophet_future)
             pred_prophet = prophet_forecast["yhat"].values
             pred_prophet = np.maximum(pred_prophet, 0)
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred_prophet)
+
             resultados.append(
                 {
                     "modelo": "Prophet",
@@ -467,10 +546,12 @@ def entrenar_mejor_modelo(df):
         st.stop()
 
     resultados_df = pd.DataFrame(resultados)
+
     resultados_df["rank_RMSE"] = resultados_df["RMSE"].rank(method="min", ascending=True)
     resultados_df["rank_MAE"] = resultados_df["MAE"].rank(method="min", ascending=True)
     resultados_df["rank_MSE"] = resultados_df["MSE"].rank(method="min", ascending=True)
     resultados_df["rank_R2"] = resultados_df["R2"].rank(method="min", ascending=False)
+
     resultados_df["score_final"] = (
         resultados_df["rank_RMSE"]
         + resultados_df["rank_MAE"]
@@ -485,8 +566,10 @@ def entrenar_mejor_modelo(df):
     if tipo_mejor == "ML":
         modelo_final = modelos_ml[nombre_mejor]
         modelo_final.fit(X, y)
+
     elif tipo_mejor == "ARIMA":
         modelo_final = ARIMA(y, order=(2, 1, 2)).fit()
+
     elif tipo_mejor == "SARIMA":
         modelo_final = SARIMAX(
             y,
@@ -495,6 +578,7 @@ def entrenar_mejor_modelo(df):
             enforce_stationarity=False,
             enforce_invertibility=False,
         ).fit(disp=False)
+
     elif tipo_mejor == "PROPHET":
         prophet_full = pd.DataFrame({"ds": df_model["FECHA"], "y": y.values})
         modelo_final = Prophet(
@@ -503,6 +587,7 @@ def entrenar_mejor_modelo(df):
             yearly_seasonality=True,
         )
         modelo_final.fit(prophet_full)
+
     else:
         modelo_final = mejor["objeto_modelo"]
 
@@ -538,6 +623,7 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
         for _ in range(dias):
             ultima_fecha = df_future["FECHA"].iloc[-1]
             nueva_fecha = ultima_fecha + pd.Timedelta(days=1)
+
             nueva_fila = {
                 "FECHA": nueva_fecha,
                 "ventas_totales": np.nan,
@@ -558,10 +644,16 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
             X_new = pd.DataFrame([nueva_fila])[features]
             pred = modelo.predict(X_new)[0]
             pred = max(pred, 0)
+
             nueva_fila["ventas_totales"] = pred
+
             predicciones.append(
-                {"FECHA": nueva_fecha, "ventas_predichas": round(pred, 2)}
+                {
+                    "FECHA": nueva_fecha,
+                    "ventas_predichas": round(pred, 2),
+                }
             )
+
             df_future = pd.concat(
                 [df_future, pd.DataFrame([nueva_fila])],
                 ignore_index=True,
@@ -571,30 +663,42 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 
     if tipo_modelo in ["ARIMA", "SARIMA"]:
         ultima_fecha = df_model["FECHA"].iloc[-1]
+
         fechas_futuras = pd.date_range(
             start=ultima_fecha + pd.Timedelta(days=1),
             periods=dias,
             freq="D",
         )
+
         pred = modelo.forecast(steps=dias)
         pred = np.maximum(np.array(pred), 0)
+
         return pd.DataFrame(
-            {"FECHA": fechas_futuras, "ventas_predichas": np.round(pred, 2)}
+            {
+                "FECHA": fechas_futuras,
+                "ventas_predichas": np.round(pred, 2),
+            }
         )
 
     if tipo_modelo == "PROPHET":
         ultima_fecha = df_model["FECHA"].iloc[-1]
+
         fechas_futuras = pd.date_range(
             start=ultima_fecha + pd.Timedelta(days=1),
             periods=dias,
             freq="D",
         )
+
         future = pd.DataFrame({"ds": fechas_futuras})
         forecast = modelo.predict(future)
         pred = forecast["yhat"].values
         pred = np.maximum(pred, 0)
+
         return pd.DataFrame(
-            {"FECHA": fechas_futuras, "ventas_predichas": np.round(pred, 2)}
+            {
+                "FECHA": fechas_futuras,
+                "ventas_predichas": np.round(pred, 2),
+            }
         )
 
     st.error("Tipo de modelo no reconocido.")
@@ -605,13 +709,19 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 # SIDEBAR
 # -------------------------------------------------
 st.sidebar.header("Datos en la nube")
-st.sidebar.success("Conectado a Google Sheets")
+st.sidebar.success("Conectado a Supabase")
 st.sidebar.info("Actualización automática cada 60 segundos")
+
+st.sidebar.markdown("---")
+st.sidebar.write(f"Usuario: {st.session_state.get('usuario')}")
+st.sidebar.write(f"Sede activa: {st.session_state.get('sede')}")
 
 if not XGBOOST_OK:
     st.sidebar.warning("XGBoost no está instalado.")
+
 if not STATSMODELS_OK:
     st.sidebar.warning("Statsmodels no está instalado. ARIMA/SARIMA no se usarán.")
+
 if not PROPHET_OK:
     st.sidebar.warning("Prophet no está instalado.")
 
@@ -623,18 +733,29 @@ if st.sidebar.button("Actualizar ahora"):
 
 if st.sidebar.button("Cerrar sesión"):
     st.session_state["logueado"] = False
+    st.session_state.pop("usuario", None)
+    st.session_state.pop("sede", None)
+    st.cache_data.clear()
+    st.cache_resource.clear()
     st.rerun()
 
-st.sidebar.caption(f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}")
+st.sidebar.caption(
+    f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+)
 
 
 # -------------------------------------------------
-# CONEXION GOOGLE SHEETS
+# CONEXION SUPABASE - CARGA DE VENTAS POR SEDE
 # -------------------------------------------------
-url = "https://docs.google.com/spreadsheets/d/1VLTbAFyw6XYbQLKj32bAg6Bn3qHDf21nGty_uoTVY7o/gviz/tq?tqx=out:csv&gid=355174621"
-
 try:
-    df_original = cargar_datos_google_sheets(url)
+    sede_usuario = st.session_state.get("sede")
+
+    if not sede_usuario:
+        st.error("No se encontró la sede del usuario logueado.")
+        st.stop()
+
+    df_original = cargar_datos_supabase(sede_usuario)
+
     df_original.columns = (
         df_original.columns.astype(str)
         .str.replace("\ufeff", "", regex=False)
@@ -664,8 +785,9 @@ try:
         st.write("Debe llamarse 'ventas_totales', 'TOTAL' o 'VENTA'.")
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
+
 except Exception as e:
-    st.error("No se pudo conectar correctamente con Google Sheets.")
+    st.error("No se pudo conectar correctamente con Supabase.")
     st.write(e)
     st.stop()
 
@@ -674,7 +796,13 @@ except Exception as e:
 # SELECTOR FAMILIA
 # -------------------------------------------------
 familias = sorted(df_original["FAMILIA"].dropna().astype(str).unique())
+
+if len(familias) == 0:
+    st.error("No hay familias disponibles para esta sede.")
+    st.stop()
+
 familia_seleccionada = st.sidebar.selectbox("Seleccionar familia", familias)
+
 df = df_original[df_original["FAMILIA"].astype(str) == familia_seleccionada].copy()
 
 
@@ -695,34 +823,47 @@ if "seccion" not in st.session_state:
     st.session_state["seccion"] = "inicio"
 
 st.markdown(
+    f'<div class="section-title">Sede activa: {st.session_state.get("sede")}</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown(
     f'<div class="section-title">Familia seleccionada: {familia_seleccionada}</div>',
     unsafe_allow_html=True,
 )
 
 b1, b2, b3, b4 = st.columns(4)
+
 with b1:
     if st.button("Resumen ejecutivo", use_container_width=True):
         seleccionar_seccion("resumen")
+
 with b2:
     if st.button("Promedio por día", use_container_width=True):
         seleccionar_seccion("promedio_dia")
+
 with b3:
     if st.button("Porcentaje por día", use_container_width=True):
         seleccionar_seccion("porcentaje_dia")
+
 with b4:
     if st.button("Promedio por mes", use_container_width=True):
         seleccionar_seccion("promedio_mes")
 
 b5, b6, b7, b8 = st.columns(4)
+
 with b5:
     if st.button("Crecimiento anual", use_container_width=True):
         seleccionar_seccion("crecimiento_anual")
+
 with b6:
     if st.button("Serie histórica", use_container_width=True):
         seleccionar_seccion("serie_historica")
+
 with b7:
     if st.button("Modelo predictivo", use_container_width=True):
         seleccionar_seccion("modelo")
+
 with b8:
     if st.button("Pronóstico: 30 días", use_container_width=True):
         seleccionar_seccion("forecast")
@@ -750,6 +891,7 @@ forecast_30 = None
 if st.session_state["seccion"] in ["modelo", "forecast"]:
     with st.spinner("Entrenando modelos y seleccionando el mejor..."):
         df_cache = df.to_json(date_format="iso")
+
         (
             modelo,
             nombre_modelo,
@@ -766,6 +908,7 @@ if st.session_state["seccion"] in ["modelo", "forecast"]:
             df_model,
             resultados_modelos,
         ) = entrenar_mejor_modelo_cache(df_cache)
+
         forecast_30 = predecir_30_dias(
             df_model,
             modelo,
@@ -793,20 +936,27 @@ ventas_dia = (
     .mean()
     .rename(columns={"ventas_totales": "promedio_ventas"})
 )
+
 ventas_dia["dia_nombre"] = pd.Categorical(
     ventas_dia["dia_nombre"],
     categories=orden_dias,
     ordered=True,
 )
+
 ventas_dia = ventas_dia.sort_values("dia_nombre")
 
 pct_dia = df.groupby("dia_nombre", as_index=False)["ventas_totales"].sum()
-pct_dia["porcentaje"] = pct_dia["ventas_totales"] / pct_dia["ventas_totales"].sum() * 100
+
+pct_dia["porcentaje"] = (
+    pct_dia["ventas_totales"] / pct_dia["ventas_totales"].sum() * 100
+)
+
 pct_dia["dia_nombre"] = pd.Categorical(
     pct_dia["dia_nombre"],
     categories=orden_dias,
     ordered=True,
 )
+
 pct_dia = pct_dia.sort_values("dia_nombre")
 
 orden_meses = [
@@ -829,11 +979,13 @@ ventas_mes = (
     .mean()
     .rename(columns={"ventas_totales": "promedio_ventas"})
 )
+
 ventas_mes["month_name"] = pd.Categorical(
     ventas_mes["month_name"],
     categories=orden_meses,
     ordered=True,
 )
+
 ventas_mes = ventas_mes.sort_values("month_name")
 
 ventas_anio = df.groupby("year", as_index=False)["ventas_totales"].sum()
@@ -849,34 +1001,55 @@ if seccion == "inicio":
     st.info("Seleccione un botón para visualizar una sección del dashboard.")
 
 elif seccion == "resumen":
-    st.markdown('<div class="section-title">Resumen ejecutivo</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Resumen ejecutivo</div>',
+        unsafe_allow_html=True,
+    )
+
     k1, k2, k3, k4, k5 = st.columns(5)
+
     with k1:
         card_kpi("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
+
     with k2:
         card_kpi("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
+
     with k3:
         card_kpi("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
+
     with k4:
         card_kpi("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
+
     with k5:
         card_kpi("Última fecha", str(df["FECHA"].max().date()))
 
 elif seccion == "promedio_dia":
-    st.markdown('<div class="section-title">Promedio de ventas por día</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Promedio de ventas por día</div>',
+        unsafe_allow_html=True,
+    )
+
     fig = px.bar(
         ventas_dia,
         x="dia_nombre",
         y="promedio_ventas",
         title=f"Promedio de ventas por día - {familia_seleccionada}",
-        labels={"dia_nombre": "Día", "promedio_ventas": "Promedio de ventas"},
+        labels={
+            "dia_nombre": "Día",
+            "promedio_ventas": "Promedio de ventas",
+        },
         text_auto=".2s",
     )
+
     fig.update_layout(template="plotly_white", height=500)
     chart_container(fig)
 
 elif seccion == "porcentaje_dia":
-    st.markdown('<div class="section-title">Participación porcentual por día</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Participación porcentual por día</div>',
+        unsafe_allow_html=True,
+    )
+
     fig = px.pie(
         pct_dia,
         names="dia_nombre",
@@ -884,78 +1057,149 @@ elif seccion == "porcentaje_dia":
         title=f"Participación porcentual por día - {familia_seleccionada}",
         hole=0.45,
     )
+
     fig.update_layout(template="plotly_white", height=500)
     chart_container(fig)
 
 elif seccion == "promedio_mes":
-    st.markdown('<div class="section-title">Promedio de ventas por mes</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Promedio de ventas por mes</div>',
+        unsafe_allow_html=True,
+    )
+
     fig = px.bar(
         ventas_mes,
         x="month_name",
         y="promedio_ventas",
         title=f"Promedio de ventas por mes - {familia_seleccionada}",
-        labels={"month_name": "Mes", "promedio_ventas": "Promedio de ventas"},
+        labels={
+            "month_name": "Mes",
+            "promedio_ventas": "Promedio de ventas",
+        },
         text_auto=".2s",
     )
+
     fig.update_layout(template="plotly_white", height=500)
     chart_container(fig)
 
 elif seccion == "crecimiento_anual":
-    st.markdown('<div class="section-title">Crecimiento histórico por año</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Crecimiento histórico por año</div>',
+        unsafe_allow_html=True,
+    )
+
     fig = px.line(
         ventas_anio,
         x="year",
         y="ventas_totales",
         title=f"Crecimiento histórico por año - {familia_seleccionada}",
         markers=True,
-        labels={"year": "Año", "ventas_totales": "Ventas totales"},
+        labels={
+            "year": "Año",
+            "ventas_totales": "Ventas totales",
+        },
     )
+
     fig.update_layout(template="plotly_white", height=500)
     chart_container(fig)
+
     st.dataframe(ventas_anio, use_container_width=True)
 
 elif seccion == "serie_historica":
-    st.markdown('<div class="section-title">Serie histórica de ventas</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Serie histórica de ventas</div>',
+        unsafe_allow_html=True,
+    )
+
     fig = px.line(
         df,
         x="FECHA",
         y="ventas_totales",
         title=f"Comportamiento histórico de ventas - {familia_seleccionada}",
-        labels={"FECHA": "Fecha", "ventas_totales": "Ventas"},
+        labels={
+            "FECHA": "Fecha",
+            "ventas_totales": "Ventas",
+        },
     )
+
     fig.update_layout(template="plotly_white", height=500)
     chart_container(fig)
 
 elif seccion == "modelo":
-    st.markdown('<div class="section-title">Resumen del modelo predictivo</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Resumen del modelo predictivo</div>',
+        unsafe_allow_html=True,
+    )
+
     st.success(
         f"Mejor modelo seleccionado para {familia_seleccionada}: {nombre_modelo} "
         f"| MAE: {mae:,.2f} | MSE: {mse:,.2f} | RMSE: {rmse:,.2f} | R²: {r2:.3f}"
     )
 
     m1, m2, m3, m4, m5 = st.columns(5)
+
     with m1:
         card_kpi("Modelo ganador", nombre_modelo)
+
     with m2:
         card_kpi("MAE", f"{mae:,.2f}")
+
     with m3:
         card_kpi("MSE", f"{mse:,.2f}")
+
     with m4:
         card_kpi("RMSE", f"{rmse:,.2f}")
+
     with m5:
         card_kpi("R²", f"{r2:.3f}")
 
-    st.markdown('<div class="section-title">Ranking de modelos</div>', unsafe_allow_html=True)
-    st.dataframe(resultados_modelos.sort_values("score_final"), use_container_width=True)
+    st.markdown(
+        '<div class="section-title">Ranking de modelos</div>',
+        unsafe_allow_html=True,
+    )
 
-    st.markdown('<div class="section-title">Comparación real vs predicción</div>', unsafe_allow_html=True)
+    st.dataframe(
+        resultados_modelos.sort_values("score_final"),
+        use_container_width=True,
+    )
+
+    st.markdown(
+        '<div class="section-title">Comparación real vs predicción</div>',
+        unsafe_allow_html=True,
+    )
+
     fechas_train = df_model.iloc[:split]["FECHA"]
     fechas_test = df_model.iloc[split:]["FECHA"]
 
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=fechas_train, y=y_train.values, mode="lines", name="Train real"))
-    fig.add_trace(go.Scatter(x=fechas_test, y=y_test.values, mode="lines", name="Test real"))
-    fig.add_trace(go.Scatter(x=fechas_test, y=pred, mode="lines", name="Predicción"))
+
+    fig.add_trace(
+        go.Scatter(
+            x=fechas_train,
+            y=y_train.values,
+            mode="lines",
+            name="Train real",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=fechas_test,
+            y=y_test.values,
+            mode="lines",
+            name="Test real",
+        )
+    )
+
+    fig.add_trace(
+        go.Scatter(
+            x=fechas_test,
+            y=pred,
+            mode="lines",
+            name="Predicción",
+        )
+    )
+
     fig.update_layout(
         template="plotly_white",
         title=f"Ventas reales vs predicción - {familia_seleccionada}",
@@ -963,11 +1207,17 @@ elif seccion == "modelo":
         xaxis_title="Fecha",
         yaxis_title="Ventas",
     )
+
     chart_container(fig)
 
 elif seccion == "forecast":
-    st.markdown('<div class="section-title">Proyección de los próximos 30 días</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Proyección de los próximos 30 días</div>',
+        unsafe_allow_html=True,
+    )
+
     fig = go.Figure()
+
     fig.add_trace(
         go.Scatter(
             x=df["FECHA"].tail(90),
@@ -976,6 +1226,7 @@ elif seccion == "forecast":
             name="Histórico reciente",
         )
     )
+
     fig.add_trace(
         go.Scatter(
             x=forecast_30["FECHA"],
@@ -984,6 +1235,7 @@ elif seccion == "forecast":
             name=f"Forecast 30 días - {nombre_modelo}",
         )
     )
+
     fig.update_layout(
         template="plotly_white",
         title=f"Pronóstico de ventas a 30 días - {familia_seleccionada}",
@@ -991,12 +1243,18 @@ elif seccion == "forecast":
         xaxis_title="Fecha",
         yaxis_title="Ventas",
     )
+
     chart_container(fig)
 
-    st.markdown('<div class="section-title">Tabla de pronóstico</div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="section-title">Tabla de pronóstico</div>',
+        unsafe_allow_html=True,
+    )
+
     st.dataframe(forecast_30, use_container_width=True)
 
     csv = forecast_30.to_csv(index=False).encode("utf-8")
+
     st.download_button(
         label="Descargar forecast en CSV",
         data=csv,
