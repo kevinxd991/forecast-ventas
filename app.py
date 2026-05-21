@@ -106,39 +106,37 @@ def login():
             try:
                 supabase = conectar_supabase()
 
+                usuario_limpio = usuario.strip()
+                password_limpio = password.strip()
+
                 response = (
                     supabase
                     .table("usuarios")
                     .select("id_usuario, usuario, password, sede")
-                    .eq("usuario", usuario)
-                    .eq("password", password)
+                    .eq("usuario", usuario_limpio)
                     .limit(1)
                     .execute()
                 )
 
-                if response.data and len(response.data) > 0:
-                    datos_usuario = response.data[0]
+                if not response.data:
+                    st.error("El usuario no existe o Supabase no permite leer la tabla usuarios.")
+                    return
 
+                datos_usuario = response.data[0]
+                password_bd = str(datos_usuario["password"]).strip()
+
+                if password_bd == password_limpio:
                     st.session_state["logueado"] = True
                     st.session_state["usuario"] = datos_usuario["usuario"]
                     st.session_state["sede"] = datos_usuario["sede"]
 
                     st.rerun()
                 else:
-                    st.error("ID o contraseña incorrectos")
+                    st.error("Contraseña incorrecta.")
 
             except Exception as e:
                 st.error("Error al conectar con Supabase.")
                 st.write(e)
-
-
-if "logueado" not in st.session_state:
-    st.session_state["logueado"] = False
-
-if not st.session_state["logueado"]:
-    login()
-    st.stop()
-
 
 # -------------------------------------------------
 # AUTOACTUALIZACION
