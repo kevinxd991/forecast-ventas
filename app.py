@@ -22,21 +22,27 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
 
+
 try:
     from xgboost import XGBRegressor
+
     XGBOOST_OK = True
 except Exception:
     XGBOOST_OK = False
 
+
 try:
     from statsmodels.tsa.arima.model import ARIMA
     from statsmodels.tsa.statespace.sarimax import SARIMAX
+
     STATSMODELS_OK = True
 except Exception:
     STATSMODELS_OK = False
 
+
 try:
     from prophet import Prophet
+
     PROPHET_OK = True
 except Exception:
     PROPHET_OK = False
@@ -63,18 +69,25 @@ def conectar_supabase():
 
 
 # -------------------------------------------------
-# LOGIN CON SUPABASE
+# LOGIN
 # -------------------------------------------------
 def login():
     st.markdown(
         """
         <style>
+        .stApp {
+            background: #0B1220;
+        }
+        .block-container {
+            max-width: 900px;
+            padding-top: 4rem;
+        }
         .login-title {
             font-size: 2.4rem;
             font-weight: 850;
             color: #0F172A;
             text-align: center;
-            margin-top: 4rem;
+            margin-top: 1rem;
         }
         .login-subtitle {
             text-align: center;
@@ -96,7 +109,7 @@ def login():
         unsafe_allow_html=True,
     )
 
-    col1, col2, col3 = st.columns([1, 1.2, 1])
+    col1, col2, col3 = st.columns([1, 1.4, 1])
 
     with col2:
         usuario = st.text_input("ID")
@@ -119,17 +132,19 @@ def login():
                 )
 
                 if not response.data:
-                    st.error("El usuario no existe o Supabase no permite leer la tabla usuarios.")
+                    st.error("Usuario no encontrado o sin permiso de lectura en Supabase.")
                     return
 
                 datos_usuario = response.data[0]
-                password_bd = str(datos_usuario["password"]).strip()
+                password_bd = str(datos_usuario.get("password", "")).strip()
 
                 if password_bd == password_limpio:
                     st.session_state["logueado"] = True
-                    st.session_state["usuario"] = datos_usuario["usuario"]
-                    st.session_state["sede"] = datos_usuario["sede"]
+                    st.session_state["usuario"] = str(datos_usuario.get("usuario", "")).strip()
+                    st.session_state["sede"] = str(datos_usuario.get("sede", "")).strip()
+                    st.session_state["seccion"] = "inicio"
 
+                    st.cache_data.clear()
                     st.rerun()
                 else:
                     st.error("Contraseña incorrecta.")
@@ -137,6 +152,25 @@ def login():
             except Exception as e:
                 st.error("Error al conectar con Supabase.")
                 st.write(e)
+
+
+# -------------------------------------------------
+# VALIDACION DE SESION
+# -------------------------------------------------
+if "logueado" not in st.session_state:
+    st.session_state["logueado"] = False
+
+if (
+    not st.session_state.get("logueado")
+    or not st.session_state.get("usuario")
+    or not st.session_state.get("sede")
+):
+    st.session_state["logueado"] = False
+    st.session_state.pop("usuario", None)
+    st.session_state.pop("sede", None)
+    login()
+    st.stop()
+
 
 # -------------------------------------------------
 # AUTOACTUALIZACION
@@ -153,7 +187,7 @@ if time.time() - st.session_state.last_refresh >= REFRESH_SECONDS:
 
 
 # -------------------------------------------------
-# ESTILOS
+# ESTILOS DEL DASHBOARD
 # -------------------------------------------------
 st.markdown(
     """
@@ -275,7 +309,7 @@ def cargar_datos_supabase(sede_usuario):
             .table("ventas")
             .select("*")
             .eq("Sede", sede_usuario)
-            .order("id_venta")
+            .order("FECHA")
             .range(inicio, fin)
             .execute()
         )
@@ -394,10 +428,12 @@ def entrenar_mejor_modelo(df):
     y = df_model["ventas_totales"]
 
     split = int(len(df_model) * 0.8)
+
     X_train = X.iloc[:split]
     X_test = X.iloc[split:]
     y_train = y.iloc[:split]
     y_test = y.iloc[split:]
+
     fechas_train = df_model.iloc[:split]["FECHA"]
     fechas_test = df_model.iloc[split:]["FECHA"]
 
@@ -440,6 +476,7 @@ def entrenar_mejor_modelo(df):
             modelo.fit(X_train, y_train)
             pred = modelo.predict(X_test)
             pred = np.maximum(pred, 0)
+
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred)
 
             resultados.append(
@@ -462,6 +499,7 @@ def entrenar_mejor_modelo(df):
             arima_fit = ARIMA(y_train, order=(2, 1, 2)).fit()
             pred_arima = arima_fit.forecast(steps=len(y_test))
             pred_arima = np.maximum(np.array(pred_arima), 0)
+
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred_arima)
 
             resultados.append(
@@ -490,6 +528,7 @@ def entrenar_mejor_modelo(df):
 
             pred_sarima = sarima_fit.forecast(steps=len(y_test))
             pred_sarima = np.maximum(np.array(pred_sarima), 0)
+
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred_sarima)
 
             resultados.append(
@@ -510,6 +549,7 @@ def entrenar_mejor_modelo(df):
     if PROPHET_OK:
         try:
             prophet_train = pd.DataFrame({"ds": fechas_train, "y": y_train.values})
+
             prophet_model = Prophet(
                 daily_seasonality=False,
                 weekly_seasonality=True,
@@ -520,8 +560,10 @@ def entrenar_mejor_modelo(df):
 
             prophet_future = pd.DataFrame({"ds": fechas_test})
             prophet_forecast = prophet_model.predict(prophet_future)
+
             pred_prophet = prophet_forecast["yhat"].values
             pred_prophet = np.maximum(pred_prophet, 0)
+
             mae, mse, rmse, r2 = calcular_metricas(y_test, pred_prophet)
 
             resultados.append(
@@ -579,11 +621,13 @@ def entrenar_mejor_modelo(df):
 
     elif tipo_mejor == "PROPHET":
         prophet_full = pd.DataFrame({"ds": df_model["FECHA"], "y": y.values})
+
         modelo_final = Prophet(
             daily_seasonality=False,
             weekly_seasonality=True,
             yearly_seasonality=True,
         )
+
         modelo_final.fit(prophet_full)
 
     else:
@@ -640,6 +684,7 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
             }
 
             X_new = pd.DataFrame([nueva_fila])[features]
+
             pred = modelo.predict(X_new)[0]
             pred = max(pred, 0)
 
@@ -689,6 +734,7 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 
         future = pd.DataFrame({"ds": fechas_futuras})
         forecast = modelo.predict(future)
+
         pred = forecast["yhat"].values
         pred = np.maximum(pred, 0)
 
@@ -733,6 +779,7 @@ if st.sidebar.button("Cerrar sesión"):
     st.session_state["logueado"] = False
     st.session_state.pop("usuario", None)
     st.session_state.pop("sede", None)
+    st.session_state.pop("seccion", None)
     st.cache_data.clear()
     st.cache_resource.clear()
     st.rerun()
@@ -743,7 +790,7 @@ st.sidebar.caption(
 
 
 # -------------------------------------------------
-# CONEXION SUPABASE - CARGA DE VENTAS POR SEDE
+# CARGA DE DATOS DESDE SUPABASE
 # -------------------------------------------------
 try:
     sede_usuario = st.session_state.get("sede")
