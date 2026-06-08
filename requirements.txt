@@ -2,7 +2,8 @@ streamlit
 pandas
 numpy
 plotly
-scikit-learn
-xgboost
-statsmodels
 supabase
+scikit-learn
+statsmodels
+xgboost
+prophet
