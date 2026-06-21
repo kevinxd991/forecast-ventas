@@ -822,7 +822,7 @@ try:
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
 
-    if "cantidad" in df_original.columns:
+    if "CANTIDAD" in df_original.columns:
         df_original = df_original.rename(columns={"CANTIDAD": "cantidad"})
     elif "TOTAL" in df_original.columns:
         df_original = df_original.rename(columns={"TOTAL": "cantidad"})
