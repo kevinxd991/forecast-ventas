@@ -338,9 +338,10 @@ def preparar_datos(df):
     df = df.copy()
 
     df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
-    df["ventas_totales"] = pd.to_numeric(df["ventas_totales"], errors="coerce")
+    df["cantidad"] = pd.to_numeric(df["cantidad"], errors="coerce")
 
-    df = df.dropna(subset=["FECHA", "ventas_totales"])
+    # 👇 AQUÍ ESTABA EL ERROR: ahora es cantidad
+    df = df.dropna(subset=["FECHA", "cantidad"])
     df = df.sort_values("FECHA").reset_index(drop=True)
 
     df["year"] = df["FECHA"].dt.year
@@ -350,12 +351,14 @@ def preparar_datos(df):
     df["dia_nombre"] = df["FECHA"].dt.day_name()
     df["fin_semana"] = (df["day_of_week"] >= 5).astype(int)
 
-    df["lag_1"] = df["ventas_totales"].shift(1)
-    df["lag_7"] = df["ventas_totales"].shift(7)
-    df["lag_14"] = df["ventas_totales"].shift(14)
-    df["lag_30"] = df["ventas_totales"].shift(30)
-    df["media_7"] = df["ventas_totales"].rolling(7).mean()
-    df["media_30"] = df["ventas_totales"].rolling(30).mean()
+    # 👇 LAGS Y MEDIAS SOBRE CANTIDAD
+    df["lag_1"] = df["cantidad"].shift(1)
+    df["lag_7"] = df["cantidad"].shift(7)
+    df["lag_14"] = df["cantidad"].shift(14)
+    df["lag_30"] = df["cantidad"].shift(30)
+
+    df["media_7"] = df["cantidad"].rolling(7).mean()
+    df["media_30"] = df["cantidad"].rolling(30).mean()
 
     return df
 
@@ -425,7 +428,7 @@ def entrenar_mejor_modelo(df):
     ]
 
     X = df_model[features]
-    y = df_model["ventas_totales"]
+    y = df_model["cantidad"]
 
     split = int(len(df_model) * 0.8)
 
@@ -668,19 +671,19 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 
             nueva_fila = {
                 "FECHA": nueva_fecha,
-                "ventas_totales": np.nan,
+                "cantidad": np.nan,
                 "year": nueva_fecha.year,
                 "month": nueva_fecha.month,
                 "month_name": nueva_fecha.month_name(),
                 "day_of_week": nueva_fecha.dayofweek,
                 "dia_nombre": nueva_fecha.day_name(),
                 "fin_semana": 1 if nueva_fecha.dayofweek >= 5 else 0,
-                "lag_1": df_future["ventas_totales"].iloc[-1],
-                "lag_7": df_future["ventas_totales"].iloc[-7],
-                "lag_14": df_future["ventas_totales"].iloc[-14],
-                "lag_30": df_future["ventas_totales"].iloc[-30],
-                "media_7": df_future["ventas_totales"].tail(7).mean(),
-                "media_30": df_future["ventas_totales"].tail(30).mean(),
+                "lag_1": df_future["cantidad"].iloc[-1],
+                "lag_7": df_future["cantidad"].iloc[-7],
+                "lag_14": df_future["cantidad"].iloc[-14],
+                "lag_30": df_future["cantidad"].iloc[-30],
+                "media_7": df_future["cantidad"].tail(7).mean(),
+                "media_30": df_future["cantidad"].tail(30).mean(),
             }
 
             X_new = pd.DataFrame([nueva_fila])[features]
@@ -688,12 +691,12 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
             pred = modelo.predict(X_new)[0]
             pred = max(pred, 0)
 
-            nueva_fila["ventas_totales"] = pred
+            nueva_fila["cantidad"] = pred
 
             predicciones.append(
                 {
                     "FECHA": nueva_fecha,
-                    "ventas_predichas": round(pred, 2),
+                    "cantidad_predicha": round(pred, 2),
                 }
             )
 
@@ -719,7 +722,7 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
         return pd.DataFrame(
             {
                 "FECHA": fechas_futuras,
-                "ventas_predichas": np.round(pred, 2),
+                "cantidad_predicha": np.round(pred, 2),
             }
         )
 
@@ -741,7 +744,7 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
         return pd.DataFrame(
             {
                 "FECHA": fechas_futuras,
-                "ventas_predichas": np.round(pred, 2),
+                "cantidad_predicha": np.round(pred, 2),
             }
         )
 
@@ -819,15 +822,15 @@ try:
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
 
-    if "VENTAS_TOTALES" in df_original.columns:
-        df_original = df_original.rename(columns={"VENTAS_TOTALES": "ventas_totales"})
+    if "cantidad" in df_original.columns:
+        df_original = df_original.rename(columns={"cantidad": "cantidad"})
     elif "TOTAL" in df_original.columns:
-        df_original = df_original.rename(columns={"TOTAL": "ventas_totales"})
+        df_original = df_original.rename(columns={"TOTAL": "cantidad"})
     elif "VENTA" in df_original.columns:
-        df_original = df_original.rename(columns={"VENTA": "ventas_totales"})
+        df_original = df_original.rename(columns={"VENTA": "cantidad"})
     else:
         st.error("No se encontró columna de ventas.")
-        st.write("Debe llamarse 'ventas_totales', 'TOTAL' o 'VENTA'.")
+        st.write("Debe llamarse 'cantidad', 'TOTAL' o 'VENTA'.")
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
 
@@ -977,9 +980,9 @@ orden_dias = [
 ]
 
 ventas_dia = (
-    df.groupby("dia_nombre", as_index=False)["ventas_totales"]
+    df.groupby("dia_nombre", as_index=False)["cantidad"]
     .mean()
-    .rename(columns={"ventas_totales": "promedio_ventas"})
+    .rename(columns={"cantidad": "promedio_ventas"})
 )
 
 ventas_dia["dia_nombre"] = pd.Categorical(
@@ -990,10 +993,10 @@ ventas_dia["dia_nombre"] = pd.Categorical(
 
 ventas_dia = ventas_dia.sort_values("dia_nombre")
 
-pct_dia = df.groupby("dia_nombre", as_index=False)["ventas_totales"].sum()
+pct_dia = df.groupby("dia_nombre", as_index=False)["cantidad"].sum()
 
 pct_dia["porcentaje"] = (
-    pct_dia["ventas_totales"] / pct_dia["ventas_totales"].sum() * 100
+    pct_dia["cantidad"] / pct_dia["cantidad"].sum() * 100
 )
 
 pct_dia["dia_nombre"] = pd.Categorical(
@@ -1020,9 +1023,9 @@ orden_meses = [
 ]
 
 ventas_mes = (
-    df.groupby("month_name", as_index=False)["ventas_totales"]
+    df.groupby("month_name", as_index=False)["cantidad"]
     .mean()
-    .rename(columns={"ventas_totales": "promedio_ventas"})
+    .rename(columns={"cantidad": "promedio_ventas"})
 )
 
 ventas_mes["month_name"] = pd.Categorical(
@@ -1033,8 +1036,8 @@ ventas_mes["month_name"] = pd.Categorical(
 
 ventas_mes = ventas_mes.sort_values("month_name")
 
-ventas_anio = df.groupby("year", as_index=False)["ventas_totales"].sum()
-ventas_anio["crecimiento_%"] = ventas_anio["ventas_totales"].pct_change() * 100
+ventas_anio = df.groupby("year", as_index=False)["cantidad"].sum()
+ventas_anio["crecimiento_%"] = ventas_anio["cantidad"].pct_change() * 100
 
 
 # -------------------------------------------------
@@ -1054,16 +1057,16 @@ elif seccion == "resumen":
     k1, k2, k3, k4, k5 = st.columns(5)
 
     with k1:
-        card_kpi("Total vendido", f"{df['ventas_totales'].sum():,.2f}")
+        card_kpi("Total vendido", f"{df['cantidad'].sum():,.2f}")
 
     with k2:
-        card_kpi("Promedio diario", f"{df['ventas_totales'].mean():,.2f}")
+        card_kpi("Promedio diario", f"{df['cantidad'].mean():,.2f}")
 
     with k3:
-        card_kpi("Máximo diario", f"{df['ventas_totales'].max():,.2f}")
+        card_kpi("Máximo diario", f"{df['cantidad'].max():,.2f}")
 
     with k4:
-        card_kpi("Mínimo diario", f"{df['ventas_totales'].min():,.2f}")
+        card_kpi("Mínimo diario", f"{df['cantidad'].min():,.2f}")
 
     with k5:
         card_kpi("Última fecha", str(df["FECHA"].max().date()))
@@ -1136,12 +1139,12 @@ elif seccion == "crecimiento_anual":
     fig = px.line(
         ventas_anio,
         x="year",
-        y="ventas_totales",
+        y="cantidad",
         title=f"Crecimiento histórico por año - {familia_seleccionada}",
         markers=True,
         labels={
             "year": "Año",
-            "ventas_totales": "Ventas totales",
+            "cantidad": "Ventas totales",
         },
     )
 
@@ -1159,11 +1162,11 @@ elif seccion == "serie_historica":
     fig = px.line(
         df,
         x="FECHA",
-        y="ventas_totales",
+        y="cantidad",
         title=f"Comportamiento histórico de ventas - {familia_seleccionada}",
         labels={
             "FECHA": "Fecha",
-            "ventas_totales": "Ventas",
+            "cantidad": "Ventas",
         },
     )
 
@@ -1266,7 +1269,7 @@ elif seccion == "forecast":
     fig.add_trace(
         go.Scatter(
             x=df["FECHA"].tail(90),
-            y=df["ventas_totales"].tail(90),
+            y=df["cantidad"].tail(90),
             mode="lines",
             name="Histórico reciente",
         )
@@ -1275,7 +1278,7 @@ elif seccion == "forecast":
     fig.add_trace(
         go.Scatter(
             x=forecast_30["FECHA"],
-            y=forecast_30["ventas_predichas"],
+            y=forecast_30["cantidad_predicha"],
             mode="lines+markers",
             name=f"Forecast 30 días - {nombre_modelo}",
         )
