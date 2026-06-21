@@ -295,11 +295,11 @@ st.markdown(
 # TITULO
 # -------------------------------------------------
 st.markdown(
-    '<div class="titulo-principal">Dashboard de Predicci贸n de Ventas</div>',
+    '<div class="titulo-principal">Dashboard de Predicción de Ventas</div>',
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<div class="subtitulo">Panel ejecutivo con selector de familia, m煤ltiples modelos, m茅tricas comparativas y forecast autom谩tico.</div>',
+    '<div class="subtitulo">Panel ejecutivo con selector de familia, múltiples modelos, métricas comparativas y forecast automático.</div>',
     unsafe_allow_html=True,
 )
 
@@ -834,20 +834,20 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 # -------------------------------------------------
 st.sidebar.header("Datos en la nube")
 st.sidebar.success("Conectado a Supabase")
-st.sidebar.info("Actualizaci贸n autom谩tica cada 60 segundos")
+st.sidebar.info("Actualización automática cada 60 segundos")
 
 st.sidebar.markdown("---")
 st.sidebar.write(f"Usuario: {st.session_state.get('usuario')}")
 st.sidebar.write(f"Sede activa: {st.session_state.get('sede')}")
 
 if not XGBOOST_OK:
-    st.sidebar.warning("XGBoost no est谩 instalado.")
+    st.sidebar.warning("XGBoost no está instalado.")
 
 if not STATSMODELS_OK:
-    st.sidebar.warning("Statsmodels no est谩 instalado. ARIMA/SARIMA no se usar谩n.")
+    st.sidebar.warning("Statsmodels no está instalado. ARIMA/SARIMA no se usarán.")
 
 if not PROPHET_OK:
-    st.sidebar.warning("Prophet no est谩 instalado.")
+    st.sidebar.warning("Prophet no está instalado.")
 
 if st.sidebar.button("Actualizar ahora"):
     st.session_state.last_refresh = time.time()
@@ -855,7 +855,7 @@ if st.sidebar.button("Actualizar ahora"):
     st.cache_resource.clear()
     st.rerun()
 
-if st.sidebar.button("Cerrar sesi贸n"):
+if st.sidebar.button("Cerrar sesión"):
     st.session_state["logueado"] = False
     st.session_state.pop("usuario", None)
     st.session_state.pop("sede", None)
@@ -865,7 +865,7 @@ if st.sidebar.button("Cerrar sesi贸n"):
     st.rerun()
 
 st.sidebar.caption(
-    f"脷ltima actualizaci贸n: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+    f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
 )
 
 
@@ -1337,7 +1337,7 @@ elif seccion == "modelo":
 
 elif seccion == "forecast":
     st.markdown(
-        '<div class="section-title">Proyecci贸n de los pr贸ximos 30 d铆as</div>',
+        '<div class="section-title">Proyección de los próximos 30 días</div>',
         unsafe_allow_html=True,
     )
 
@@ -1353,15 +1353,15 @@ elif seccion == "forecast":
 
         es_manana = fecha_pedido.normalize() == obtener_fecha_manana().normalize()
         referencia_fecha = (
-            "Para el d铆a de ma帽ana"
+            "Para el dìa de mañana"
             if es_manana
-            else "Para la pr贸xima fecha disponible del pron贸stico"
+            else "Para la próxima fecha disponible del pronóstico"
         )
 
         st.markdown(
             f"""
             <div class="pedido-card">
-                馃摝 {referencia_fecha}, {fecha_completa}
+                {referencia_fecha}, {fecha_completa}
                 ({fecha_numerica}), se busca realizar un pedido de
                 <strong>{cantidad_pedido} kilos de {familia_pedido}</strong>.
             </div>
@@ -1393,7 +1393,7 @@ elif seccion == "forecast":
 
     fig.update_layout(
         template="plotly_white",
-        title=f"Pron贸stico de ventas a 30 d铆as - {familia_seleccionada}",
+        title=f"Pronóstico de ventas a 30 días - {familia_seleccionada}",
         height=500,
         xaxis_title="Fecha",
         yaxis_title="Ventas",
@@ -1402,7 +1402,7 @@ elif seccion == "forecast":
     chart_container(fig)
 
     st.markdown(
-        '<div class="section-title">Tabla de pron贸stico</div>',
+        '<div class="section-title">Tabla de pronóstico</div>',
         unsafe_allow_html=True,
     )
 
