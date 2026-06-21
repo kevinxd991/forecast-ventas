@@ -1,6 +1,7 @@
 import time
 from datetime import datetime
 from io import StringIO
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -53,7 +54,7 @@ except Exception:
 # -------------------------------------------------
 st.set_page_config(
     page_title="Forecasting de Ventas",
-    page_icon="📈",
+    page_icon="馃搱",
     layout="wide",
 )
 
@@ -113,7 +114,7 @@ def login():
 
     with col2:
         usuario = st.text_input("ID")
-        password = st.text_input("Contraseña", type="password")
+        password = st.text_input("Contrase帽a", type="password")
 
         if st.button("Ingresar", use_container_width=True):
             try:
@@ -147,7 +148,7 @@ def login():
                     st.cache_data.clear()
                     st.rerun()
                 else:
-                    st.error("Contraseña incorrecta.")
+                    st.error("Contrase帽a incorrecta.")
 
             except Exception as e:
                 st.error("Error al conectar con Supabase.")
@@ -271,6 +272,19 @@ st.markdown(
     .stAlert {
         border-radius: 14px;
     }
+    .pedido-card {
+        background: linear-gradient(135deg, #ECFDF5 0%, #D1FAE5 100%);
+        border: 1px solid #6EE7B7;
+        border-left: 7px solid #059669;
+        border-radius: 18px;
+        padding: 1.25rem 1.4rem;
+        margin: 0.5rem 0 1.4rem 0;
+        color: #064E3B;
+        font-size: 1.08rem;
+        font-weight: 700;
+        line-height: 1.6;
+        box-shadow: 0 8px 22px rgba(5, 150, 105, 0.10);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -281,11 +295,11 @@ st.markdown(
 # TITULO
 # -------------------------------------------------
 st.markdown(
-    '<div class="titulo-principal">Dashboard de Predicción de Ventas</div>',
+    '<div class="titulo-principal">Dashboard de Predicci贸n de Ventas</div>',
     unsafe_allow_html=True,
 )
 st.markdown(
-    '<div class="subtitulo">Panel ejecutivo con selector de familia, múltiples modelos, métricas comparativas y forecast automático.</div>',
+    '<div class="subtitulo">Panel ejecutivo con selector de familia, m煤ltiples modelos, m茅tricas comparativas y forecast autom谩tico.</div>',
     unsafe_allow_html=True,
 )
 
@@ -340,7 +354,7 @@ def preparar_datos(df):
     df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
     df["cantidad"] = pd.to_numeric(df["cantidad"], errors="coerce")
 
-    # 👇 AQUÍ ESTABA EL ERROR: ahora es cantidad
+    # 馃憞 AQU脥 ESTABA EL ERROR: ahora es cantidad
     df = df.dropna(subset=["FECHA", "cantidad"])
     df = df.sort_values("FECHA").reset_index(drop=True)
 
@@ -351,7 +365,7 @@ def preparar_datos(df):
     df["dia_nombre"] = df["FECHA"].dt.day_name()
     df["fin_semana"] = (df["day_of_week"] >= 5).astype(int)
 
-    # 👇 LAGS Y MEDIAS SOBRE CANTIDAD
+    # 馃憞 LAGS Y MEDIAS SOBRE CANTIDAD
     df["lag_1"] = df["cantidad"].shift(1)
     df["lag_7"] = df["cantidad"].shift(7)
     df["lag_14"] = df["cantidad"].shift(14)
@@ -397,6 +411,59 @@ def chart_container(fig):
 
 def seleccionar_seccion(nombre):
     st.session_state["seccion"] = nombre
+
+
+def obtener_fecha_manana():
+    """Devuelve la fecha de ma帽ana usando la zona horaria de Per煤."""
+    zona_peru = ZoneInfo("America/Lima")
+    hoy_peru = datetime.now(zona_peru).date()
+    return pd.Timestamp(hoy_peru) + pd.Timedelta(days=1)
+
+
+def formatear_fecha_es(fecha):
+    """Convierte una fecha a texto completo en espa帽ol."""
+    fecha = pd.Timestamp(fecha)
+
+    dias = [
+        "lunes",
+        "martes",
+        "mi茅rcoles",
+        "jueves",
+        "viernes",
+        "s谩bado",
+        "domingo",
+    ]
+
+    meses = [
+        "enero",
+        "febrero",
+        "marzo",
+        "abril",
+        "mayo",
+        "junio",
+        "julio",
+        "agosto",
+        "septiembre",
+        "octubre",
+        "noviembre",
+        "diciembre",
+    ]
+
+    return (
+        f"{dias[fecha.dayofweek]} {fecha.day} de "
+        f"{meses[fecha.month - 1]} de {fecha.year}"
+    )
+
+
+def formatear_cantidad_kilos(cantidad):
+    """Muestra kilos enteros o con dos decimales cuando sea necesario."""
+    cantidad = max(float(cantidad), 0)
+
+    if np.isclose(cantidad, round(cantidad), atol=0.005):
+        return f"{cantidad:,.0f}".replace(",", ".")
+
+    texto = f"{cantidad:,.2f}"
+    return texto.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
 # -------------------------------------------------
@@ -585,7 +652,7 @@ def entrenar_mejor_modelo(df):
             pass
 
     if len(resultados) == 0:
-        st.error("No se pudo entrenar ningún modelo.")
+        st.error("No se pudo entrenar ning煤n modelo.")
         st.stop()
 
     resultados_df = pd.DataFrame(resultados)
@@ -661,13 +728,24 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
     df_model["FECHA"] = pd.to_datetime(df_model["FECHA"], errors="coerce")
     df_model = df_model.sort_values("FECHA").reset_index(drop=True)
 
+    ultima_fecha = pd.Timestamp(df_model["FECHA"].iloc[-1]).normalize()
+    fecha_manana = obtener_fecha_manana().normalize()
+
+    # El modelo debe avanzar desde el d铆a posterior al 煤ltimo registro.
+    # Si la informaci贸n est谩 atrasada, genera internamente los d铆as faltantes
+    # y muestra 煤nicamente los 30 d铆as que comienzan ma帽ana.
+    primera_fecha_modelable = ultima_fecha + pd.Timedelta(days=1)
+    fecha_inicio_salida = max(primera_fecha_modelable, fecha_manana)
+    dias_ocultos = max((fecha_inicio_salida - primera_fecha_modelable).days, 0)
+    pasos_totales = dias_ocultos + dias
+
     if tipo_modelo == "ML":
         df_future = df_model.copy()
         predicciones = []
 
-        for _ in range(dias):
-            ultima_fecha = df_future["FECHA"].iloc[-1]
-            nueva_fecha = ultima_fecha + pd.Timedelta(days=1)
+        for _ in range(pasos_totales):
+            ultima_fecha_iteracion = df_future["FECHA"].iloc[-1]
+            nueva_fecha = ultima_fecha_iteracion + pd.Timedelta(days=1)
 
             nueva_fila = {
                 "FECHA": nueva_fecha,
@@ -690,7 +768,6 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 
             pred = modelo.predict(X_new)[0]
             pred = max(pred, 0)
-
             nueva_fila["cantidad"] = pred
 
             predicciones.append(
@@ -705,48 +782,48 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
                 ignore_index=True,
             )
 
-        return pd.DataFrame(predicciones)
+        return pd.DataFrame(predicciones).iloc[dias_ocultos:].reset_index(drop=True)
 
     if tipo_modelo in ["ARIMA", "SARIMA"]:
-        ultima_fecha = df_model["FECHA"].iloc[-1]
-
-        fechas_futuras = pd.date_range(
-            start=ultima_fecha + pd.Timedelta(days=1),
-            periods=dias,
+        fechas_generadas = pd.date_range(
+            start=primera_fecha_modelable,
+            periods=pasos_totales,
             freq="D",
         )
 
-        pred = modelo.forecast(steps=dias)
+        pred = modelo.forecast(steps=pasos_totales)
         pred = np.maximum(np.array(pred), 0)
 
-        return pd.DataFrame(
+        resultado = pd.DataFrame(
             {
-                "FECHA": fechas_futuras,
+                "FECHA": fechas_generadas,
                 "cantidad_predicha": np.round(pred, 2),
             }
         )
 
-    if tipo_modelo == "PROPHET":
-        ultima_fecha = df_model["FECHA"].iloc[-1]
+        return resultado.iloc[dias_ocultos:].reset_index(drop=True)
 
-        fechas_futuras = pd.date_range(
-            start=ultima_fecha + pd.Timedelta(days=1),
-            periods=dias,
+    if tipo_modelo == "PROPHET":
+        fechas_generadas = pd.date_range(
+            start=primera_fecha_modelable,
+            periods=pasos_totales,
             freq="D",
         )
 
-        future = pd.DataFrame({"ds": fechas_futuras})
+        future = pd.DataFrame({"ds": fechas_generadas})
         forecast = modelo.predict(future)
 
         pred = forecast["yhat"].values
         pred = np.maximum(pred, 0)
 
-        return pd.DataFrame(
+        resultado = pd.DataFrame(
             {
-                "FECHA": fechas_futuras,
+                "FECHA": fechas_generadas,
                 "cantidad_predicha": np.round(pred, 2),
             }
         )
+
+        return resultado.iloc[dias_ocultos:].reset_index(drop=True)
 
     st.error("Tipo de modelo no reconocido.")
     st.stop()
@@ -757,20 +834,20 @@ def predecir_30_dias(df_model, modelo, tipo_modelo, features, dias=30):
 # -------------------------------------------------
 st.sidebar.header("Datos en la nube")
 st.sidebar.success("Conectado a Supabase")
-st.sidebar.info("Actualización automática cada 60 segundos")
+st.sidebar.info("Actualizaci贸n autom谩tica cada 60 segundos")
 
 st.sidebar.markdown("---")
 st.sidebar.write(f"Usuario: {st.session_state.get('usuario')}")
 st.sidebar.write(f"Sede activa: {st.session_state.get('sede')}")
 
 if not XGBOOST_OK:
-    st.sidebar.warning("XGBoost no está instalado.")
+    st.sidebar.warning("XGBoost no est谩 instalado.")
 
 if not STATSMODELS_OK:
-    st.sidebar.warning("Statsmodels no está instalado. ARIMA/SARIMA no se usarán.")
+    st.sidebar.warning("Statsmodels no est谩 instalado. ARIMA/SARIMA no se usar谩n.")
 
 if not PROPHET_OK:
-    st.sidebar.warning("Prophet no está instalado.")
+    st.sidebar.warning("Prophet no est谩 instalado.")
 
 if st.sidebar.button("Actualizar ahora"):
     st.session_state.last_refresh = time.time()
@@ -778,7 +855,7 @@ if st.sidebar.button("Actualizar ahora"):
     st.cache_resource.clear()
     st.rerun()
 
-if st.sidebar.button("Cerrar sesión"):
+if st.sidebar.button("Cerrar sesi贸n"):
     st.session_state["logueado"] = False
     st.session_state.pop("usuario", None)
     st.session_state.pop("sede", None)
@@ -788,7 +865,7 @@ if st.sidebar.button("Cerrar sesión"):
     st.rerun()
 
 st.sidebar.caption(
-    f"Última actualización: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+    f"脷ltima actualizaci贸n: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
 )
 
 
@@ -799,7 +876,7 @@ try:
     sede_usuario = st.session_state.get("sede")
 
     if not sede_usuario:
-        st.error("No se encontró la sede del usuario logueado.")
+        st.error("No se encontr贸 la sede del usuario logueado.")
         st.stop()
 
     df_original = cargar_datos_supabase(sede_usuario)
@@ -813,12 +890,12 @@ try:
     )
 
     if "FECHA" not in df_original.columns:
-        st.error("No se encontró la columna 'FECHA'.")
+        st.error("No se encontr贸 la columna 'FECHA'.")
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
 
     if "FAMILIA" not in df_original.columns:
-        st.error("No se encontró la columna 'FAMILIA'.")
+        st.error("No se encontr贸 la columna 'FAMILIA'.")
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
 
@@ -829,7 +906,7 @@ try:
     elif "VENTA" in df_original.columns:
         df_original = df_original.rename(columns={"VENTA": "cantidad"})
     else:
-        st.error("No se encontró columna de ventas.")
+        st.error("No se encontr贸 columna de ventas.")
         st.write("Debe llamarse 'CANTIDAD', 'TOTAL' o 'VENTA'.")
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
@@ -849,7 +926,7 @@ if len(familias) == 0:
     st.error("No hay familias disponibles para esta sede.")
     st.stop()
 
-familia_seleccionada = st.sidebar.selectbox("Seleccionar familia", familias)
+familia_seleccionada = st.sidebar.selectbox("Seleccionar Producto", familias)
 
 df = df_original[df_original["FAMILIA"].astype(str) == familia_seleccionada].copy()
 
@@ -860,7 +937,7 @@ df = df_original[df_original["FAMILIA"].astype(str) == familia_seleccionada].cop
 df = preparar_datos(df)
 
 if len(df.dropna()) < 31:
-    st.error("Se necesitan al menos 31 registros válidos para generar lags y entrenar el modelo.")
+    st.error("Se necesitan al menos 31 registros v谩lidos para generar lags y entrenar el modelo.")
     st.stop()
 
 
@@ -876,7 +953,7 @@ st.markdown(
 )
 
 st.markdown(
-    f'<div class="section-title">Familia seleccionada: {familia_seleccionada}</div>',
+    f'<div class="section-title">Producto seleccionado: {familia_seleccionada}</div>',
     unsafe_allow_html=True,
 )
 
@@ -887,11 +964,11 @@ with b1:
         seleccionar_seccion("resumen")
 
 with b2:
-    if st.button("Promedio por día", use_container_width=True):
+    if st.button("Promedio por d铆a", use_container_width=True):
         seleccionar_seccion("promedio_dia")
 
 with b3:
-    if st.button("Porcentaje por día", use_container_width=True):
+    if st.button("Porcentaje por d铆a", use_container_width=True):
         seleccionar_seccion("porcentaje_dia")
 
 with b4:
@@ -905,7 +982,7 @@ with b5:
         seleccionar_seccion("crecimiento_anual")
 
 with b6:
-    if st.button("Serie histórica", use_container_width=True):
+    if st.button("Serie hist贸rica", use_container_width=True):
         seleccionar_seccion("serie_historica")
 
 with b7:
@@ -913,7 +990,7 @@ with b7:
         seleccionar_seccion("modelo")
 
 with b8:
-    if st.button("Pronóstico: 30 días", use_container_width=True):
+    if st.button("Pron贸stico: 30 d铆as", use_container_width=True):
         seleccionar_seccion("forecast")
 
 
@@ -1046,7 +1123,7 @@ ventas_anio["crecimiento_%"] = ventas_anio["cantidad"].pct_change() * 100
 seccion = st.session_state["seccion"]
 
 if seccion == "inicio":
-    st.info("Seleccione un botón para visualizar una sección del dashboard.")
+    st.info("Seleccione un bot贸n para visualizar una secci贸n del dashboard.")
 
 elif seccion == "resumen":
     st.markdown(
@@ -1063,17 +1140,17 @@ elif seccion == "resumen":
         card_kpi("Promedio diario", f"{df['cantidad'].mean():,.2f}")
 
     with k3:
-        card_kpi("Máximo diario", f"{df['cantidad'].max():,.2f}")
+        card_kpi("M谩ximo diario", f"{df['cantidad'].max():,.2f}")
 
     with k4:
-        card_kpi("Mínimo diario", f"{df['cantidad'].min():,.2f}")
+        card_kpi("M铆nimo diario", f"{df['cantidad'].min():,.2f}")
 
     with k5:
-        card_kpi("Última fecha", str(df["FECHA"].max().date()))
+        card_kpi("脷ltima fecha", str(df["FECHA"].max().date()))
 
 elif seccion == "promedio_dia":
     st.markdown(
-        '<div class="section-title">Promedio de ventas por día</div>',
+        '<div class="section-title">Promedio de ventas por d铆a</div>',
         unsafe_allow_html=True,
     )
 
@@ -1081,9 +1158,9 @@ elif seccion == "promedio_dia":
         ventas_dia,
         x="dia_nombre",
         y="promedio_ventas",
-        title=f"Promedio de ventas por día - {familia_seleccionada}",
+        title=f"Promedio de ventas por d铆a - {familia_seleccionada}",
         labels={
-            "dia_nombre": "Día",
+            "dia_nombre": "D铆a",
             "promedio_ventas": "Promedio de ventas",
         },
         text_auto=".2s",
@@ -1094,7 +1171,7 @@ elif seccion == "promedio_dia":
 
 elif seccion == "porcentaje_dia":
     st.markdown(
-        '<div class="section-title">Participación porcentual por día</div>',
+        '<div class="section-title">Participaci贸n porcentual por d铆a</div>',
         unsafe_allow_html=True,
     )
 
@@ -1102,7 +1179,7 @@ elif seccion == "porcentaje_dia":
         pct_dia,
         names="dia_nombre",
         values="porcentaje",
-        title=f"Participación porcentual por día - {familia_seleccionada}",
+        title=f"Participaci贸n porcentual por d铆a - {familia_seleccionada}",
         hole=0.45,
     )
 
@@ -1132,7 +1209,7 @@ elif seccion == "promedio_mes":
 
 elif seccion == "crecimiento_anual":
     st.markdown(
-        '<div class="section-title">Crecimiento histórico por año</div>',
+        '<div class="section-title">Crecimiento hist贸rico por a帽o</div>',
         unsafe_allow_html=True,
     )
 
@@ -1140,10 +1217,10 @@ elif seccion == "crecimiento_anual":
         ventas_anio,
         x="year",
         y="cantidad",
-        title=f"Crecimiento histórico por año - {familia_seleccionada}",
+        title=f"Crecimiento hist贸rico por a帽o - {familia_seleccionada}",
         markers=True,
         labels={
-            "year": "Año",
+            "year": "A帽o",
             "cantidad": "Ventas totales",
         },
     )
@@ -1155,7 +1232,7 @@ elif seccion == "crecimiento_anual":
 
 elif seccion == "serie_historica":
     st.markdown(
-        '<div class="section-title">Serie histórica de ventas</div>',
+        '<div class="section-title">Serie hist贸rica de ventas</div>',
         unsafe_allow_html=True,
     )
 
@@ -1163,7 +1240,7 @@ elif seccion == "serie_historica":
         df,
         x="FECHA",
         y="cantidad",
-        title=f"Comportamiento histórico de ventas - {familia_seleccionada}",
+        title=f"Comportamiento hist贸rico de ventas - {familia_seleccionada}",
         labels={
             "FECHA": "Fecha",
             "cantidad": "Ventas",
@@ -1181,7 +1258,7 @@ elif seccion == "modelo":
 
     st.success(
         f"Mejor modelo seleccionado para {familia_seleccionada}: {nombre_modelo} "
-        f"| MAE: {mae:,.2f} | MSE: {mse:,.2f} | RMSE: {rmse:,.2f} | R²: {r2:.3f}"
+        f"| MAE: {mae:,.2f} | MSE: {mse:,.2f} | RMSE: {rmse:,.2f} | R虏: {r2:.3f}"
     )
 
     m1, m2, m3, m4, m5 = st.columns(5)
@@ -1199,7 +1276,7 @@ elif seccion == "modelo":
         card_kpi("RMSE", f"{rmse:,.2f}")
 
     with m5:
-        card_kpi("R²", f"{r2:.3f}")
+        card_kpi("R虏", f"{r2:.3f}")
 
     st.markdown(
         '<div class="section-title">Ranking de modelos</div>',
@@ -1212,7 +1289,7 @@ elif seccion == "modelo":
     )
 
     st.markdown(
-        '<div class="section-title">Comparación real vs predicción</div>',
+        '<div class="section-title">Comparaci贸n real vs predicci贸n</div>',
         unsafe_allow_html=True,
     )
 
@@ -1244,13 +1321,13 @@ elif seccion == "modelo":
             x=fechas_test,
             y=pred,
             mode="lines",
-            name="Predicción",
+            name="Predicci贸n",
         )
     )
 
     fig.update_layout(
         template="plotly_white",
-        title=f"Ventas reales vs predicción - {familia_seleccionada}",
+        title=f"Ventas reales vs predicci贸n - {familia_seleccionada}",
         height=500,
         xaxis_title="Fecha",
         yaxis_title="Ventas",
@@ -1260,9 +1337,39 @@ elif seccion == "modelo":
 
 elif seccion == "forecast":
     st.markdown(
-        '<div class="section-title">Proyección de los próximos 30 días</div>',
+        '<div class="section-title">Proyecci贸n de los pr贸ximos 30 d铆as</div>',
         unsafe_allow_html=True,
     )
+
+    if forecast_30 is not None and not forecast_30.empty:
+        pronostico_manana = forecast_30.iloc[0]
+        fecha_pedido = pd.Timestamp(pronostico_manana["FECHA"])
+        cantidad_pedido = formatear_cantidad_kilos(
+            pronostico_manana["cantidad_predicha"]
+        )
+        familia_pedido = str(familia_seleccionada).strip().title()
+        fecha_completa = formatear_fecha_es(fecha_pedido)
+        fecha_numerica = fecha_pedido.strftime("%d/%m/%Y")
+
+        es_manana = fecha_pedido.normalize() == obtener_fecha_manana().normalize()
+        referencia_fecha = (
+            "Para el d铆a de ma帽ana"
+            if es_manana
+            else "Para la pr贸xima fecha disponible del pron贸stico"
+        )
+
+        st.markdown(
+            f"""
+            <div class="pedido-card">
+                馃摝 {referencia_fecha}, {fecha_completa}
+                ({fecha_numerica}), se busca realizar un pedido de
+                <strong>{cantidad_pedido} kilos de {familia_pedido}</strong>.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.warning("No hay datos de pron贸stico disponibles para generar el pedido de ma帽ana.")
 
     fig = go.Figure()
 
@@ -1271,7 +1378,7 @@ elif seccion == "forecast":
             x=df["FECHA"].tail(90),
             y=df["cantidad"].tail(90),
             mode="lines",
-            name="Histórico reciente",
+            name="Hist贸rico reciente",
         )
     )
 
@@ -1280,13 +1387,13 @@ elif seccion == "forecast":
             x=forecast_30["FECHA"],
             y=forecast_30["cantidad_predicha"],
             mode="lines+markers",
-            name=f"Forecast 30 días - {nombre_modelo}",
+            name=f"Forecast 30 d铆as - {nombre_modelo}",
         )
     )
 
     fig.update_layout(
         template="plotly_white",
-        title=f"Pronóstico de ventas a 30 días - {familia_seleccionada}",
+        title=f"Pron贸stico de ventas a 30 d铆as - {familia_seleccionada}",
         height=500,
         xaxis_title="Fecha",
         yaxis_title="Ventas",
@@ -1295,7 +1402,7 @@ elif seccion == "forecast":
     chart_container(fig)
 
     st.markdown(
-        '<div class="section-title">Tabla de pronóstico</div>',
+        '<div class="section-title">Tabla de pron贸stico</div>',
         unsafe_allow_html=True,
     )
 
