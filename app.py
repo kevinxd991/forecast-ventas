@@ -823,14 +823,14 @@ try:
         st.stop()
 
     if "cantidad" in df_original.columns:
-        df_original = df_original.rename(columns={"cantidad": "cantidad"})
+        df_original = df_original.rename(columns={"CANTIDAD": "cantidad"})
     elif "TOTAL" in df_original.columns:
         df_original = df_original.rename(columns={"TOTAL": "cantidad"})
     elif "VENTA" in df_original.columns:
         df_original = df_original.rename(columns={"VENTA": "cantidad"})
     else:
         st.error("No se encontró columna de ventas.")
-        st.write("Debe llamarse 'cantidad', 'TOTAL' o 'VENTA'.")
+        st.write("Debe llamarse 'CANTIDAD', 'TOTAL' o 'VENTA'.")
         st.write("Columnas detectadas:", df_original.columns.tolist())
         st.stop()
 
