@@ -178,7 +178,7 @@ def cargar_ventas(sede):
         respuesta=(supabase
                     .table("ventas")
                     .select("*")
-                    .eq("SEDE",sede)
+                    .eq("SEDE", sede.upper())
                     .range(inicio,fin)
                     .execute())
 
