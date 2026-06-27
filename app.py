@@ -437,7 +437,7 @@ if st.button("Generar predicción", use_container_width=True):
     registros_supabase = []
 
     # productos = df_familia["PRODUCTO"].unique()
-productos = df_familia["PRODUCTO"].dropna().unique()
+    productos = df_familia["PRODUCTO"].dropna().unique()
     barra = st.progress(0)
 
     for i, producto in enumerate(productos):
