@@ -809,7 +809,8 @@ if generar:
     </div>
     """, unsafe_allow_html=True)
 
-    pedido_vista = pedido.style.applymap(
+    try:
+    pedido_vista = pedido.style.map(
         pintar_recomendacion,
         subset=["RECOMENDACION"]
     ).format({
@@ -818,6 +819,9 @@ if generar:
     })
 
     st.dataframe(pedido_vista, use_container_width=True, height=430)
+
+except Exception:
+    st.dataframe(pedido, use_container_width=True, height=430)
 
     archivo = pedido.to_csv(index=False).encode("utf-8-sig")
 
