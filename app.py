@@ -10,6 +10,19 @@ import numpy as np
 from supabase import create_client
 from sklearn.ensemble import RandomForestRegressor
 from datetime import datetime
+from io import BytesIO
+
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    Table,
+    TableStyle
+)
 
 # ============================================================
 # CONFIGURACIÓN GENERAL
@@ -703,6 +716,139 @@ def pintar_recomendacion(valor):
         return "background-color: #FEE2E2; color: #991B1B; font-weight: 800;"
     return "background-color: #DBEAFE; color: #1E40AF; font-weight: 800;"
 
+def generar_pdf(pedido, usuario, sede, familia, horizonte):
+
+    buffer = BytesIO()
+
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=(21*cm,29.7*cm),
+        rightMargin=1.2*cm,
+        leftMargin=1.2*cm,
+        topMargin=1.5*cm,
+        bottomMargin=1.5*cm
+    )
+
+    estilos = getSampleStyleSheet()
+
+    titulo = estilos["Heading1"]
+    titulo.alignment = TA_CENTER
+
+    subtitulo = estilos["Heading2"]
+
+    normal = estilos["BodyText"]
+
+    elementos = []
+
+    elementos.append(Paragraph("<b>MARKET DONNA</b>", titulo))
+    elementos.append(Paragraph("Reporte Ejecutivo de Predicción de Pedidos", subtitulo))
+    elementos.append(Spacer(1,15))
+
+    elementos.append(Paragraph(
+        f"<b>Fecha de generación:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+        normal))
+
+    elementos.append(Paragraph(
+        f"<b>Usuario:</b> {usuario}",
+        normal))
+
+    elementos.append(Paragraph(
+        f"<b>Sede:</b> {sede}",
+        normal))
+
+    elementos.append(Paragraph(
+        f"<b>Familia:</b> {familia}",
+        normal))
+
+    elementos.append(Paragraph(
+        f"<b>Horizonte:</b> {horizonte} día(s)",
+        normal))
+
+    elementos.append(Spacer(1,20))
+
+    elementos.append(Paragraph("<b>Resumen Ejecutivo</b>", subtitulo))
+
+    resumen = [
+        ["Indicador","Valor"],
+        ["Productos Analizados", str(len(pedido))],
+        ["Predicción Total", f"{pedido['PREDICCION_TOTAL'].sum():,.2f}"],
+        ["Pedido Sugerido", f"{pedido['PEDIDO_SUGERIDO'].sum():,.0f}"]
+    ]
+
+    tabla = Table(resumen, colWidths=[8*cm,6*cm])
+
+    tabla.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1D4ED8")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('ALIGN',(0,0),(-1,-1),'CENTER'),
+        ('GRID',(0,0),(-1,-1),1,colors.grey),
+        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+        ('BOTTOMPADDING',(0,0),(-1,0),10),
+    ]))
+
+    elementos.append(tabla)
+
+    elementos.append(Spacer(1,20))
+
+    elementos.append(Paragraph("<b>Hoja de Pedido Recomendada</b>", subtitulo))
+
+    datos = [[
+        "Producto",
+        "Unidad",
+        "Predicción",
+        "Pedido",
+        "Recomendación"
+    ]]
+
+    for _, fila in pedido.iterrows():
+
+        datos.append([
+            fila["DESCRIPCIO"],
+            fila["UNIDAD"],
+            f"{fila['PREDICCION_TOTAL']:.2f}",
+            str(fila["PEDIDO_SUGERIDO"]),
+            fila["RECOMENDACION"]
+        ])
+
+    tabla2 = Table(datos)
+
+    tabla2.setStyle(TableStyle([
+        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#10B981")),
+        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+        ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+        ('BACKGROUND',(0,1),(-1,-1),colors.beige),
+        ('FONTSIZE',(0,0),(-1,-1),8),
+        ('BOTTOMPADDING',(0,0),(-1,0),8)
+    ]))
+
+    elementos.append(tabla2)
+
+    elementos.append(Spacer(1,20))
+
+    elementos.append(Paragraph("<b>Observaciones</b>", subtitulo))
+
+    elementos.append(Paragraph(
+        """
+        • Este reporte fue generado automáticamente por el sistema
+        inteligente de predicción de pedidos de Market Donna.
+
+        • Las cantidades sugeridas fueron calculadas utilizando un modelo
+        Random Forest entrenado con el historial de ventas.
+
+        • Se recomienda revisar diariamente este reporte antes de realizar
+        las compras para abastecimiento.
+        """,
+        normal
+    ))
+
+    doc.build(elementos)
+
+    pdf = buffer.getvalue()
+    buffer.close()
+
+    return pdf
 
 # ============================================================
 # GENERAR PREDICCIÓN
@@ -823,15 +969,39 @@ if generar:
     except Exception:
         st.dataframe(pedido, use_container_width=True, height=430)
 
-    archivo = pedido.to_csv(index=False).encode("utf-8-sig")
+        archivo = pedido.to_csv(index=False).encode("utf-8-sig")
+        
+        st.download_button(
+            label="📥 Descargar hoja de pedido CSV",
+            data=archivo,
+            file_name=f"pedido_{familia}_{horizonte}_dias.csv",
+            mime="text/csv",
+            use_container_width=True
+        )
+        
+        pdf = generar_pdf(
+            pedido,
+            st.session_state.usuario,
+            st.session_state.sede,
+            familia,
+            horizonte
+        )
 
-    st.download_button(
-        label="📥 Descargar hoja de pedido CSV",
-        data=archivo,
-        file_name=f"pedido_{familia}_{horizonte}_dias.csv",
-        mime="text/csv",
-        use_container_width=True
-    )
+st.download_button(
+    label="📄 Descargar Reporte Ejecutivo PDF",
+    data=pdf,
+    file_name=f"Reporte_MarketDonna_{familia}.pdf",
+    mime="application/pdf",
+    use_container_width=True
+)
+
+st.download_button(
+    label="📄 Descargar Reporte Ejecutivo PDF",
+    data=pdf,
+    file_name=f"Reporte_MarketDonna_{familia}.pdf",
+    mime="application/pdf",
+    use_container_width=True
+)
 
     st.write("")
 
