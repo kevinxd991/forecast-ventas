@@ -164,41 +164,24 @@ st.divider()
 # ============================================================
 
 @st.cache_data(ttl=60)
-def cargar_ventas(sede):
+def cargar_ventas():
 
-    registros=[]
+    respuesta = (
+        supabase
+        .table("ventas")
+        .select("*")
+        .limit(10)
+        .execute()
+    )
 
-    inicio=0
-    limite=1000
-
-    while True:
-
-        fin=inicio+limite-1
-
-        respuesta=(supabase
-                    .table("ventas")
-                    .select("*")
-                    .eq("SEDE", sede.upper())
-                    .range(inicio,fin)
-                    .execute())
-
-        datos=respuesta.data
-
-        if len(datos)==0:
-            break
-
-        registros.extend(datos)
-
-        if len(datos)<limite:
-            break
-
-        inicio+=limite
-
-    df=pd.DataFrame(registros)
+    df = pd.DataFrame(respuesta.data)
 
     return df
 
-df=cargar_ventas(st.session_state.sede)
+df = cargar_ventas()
+
+st.write(df.head())
+st.write(df.columns.tolist())
 
 if df.empty:
 
