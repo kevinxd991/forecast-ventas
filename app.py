@@ -161,6 +161,16 @@ def cargar_ventas():
 
 df = cargar_ventas()
 
+st.write("Cantidad de registros:", len(df))
+st.write(df.head())
+
+st.write("Columnas:")
+st.write(df.columns.tolist())
+
+if "SEDE" in df.columns:
+    st.write("Sedes encontradas:")
+    st.write(df["SEDE"].unique())
+
 if df.empty:
     st.warning("No existen datos en la tabla ventas.")
     st.stop()
