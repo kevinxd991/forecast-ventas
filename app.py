@@ -506,7 +506,7 @@ if st.button("Generar predicción", use_container_width=True):
     # except Exception as e:
     #     st.warning("La predicción se generó, pero no se pudo guardar en Supabase.")
     #     st.write(e)
-st.success("Predicción generada correctamente.")
+    st.success("Predicción generada correctamente.")
     # Mostrar tabla
     st.dataframe(pedido, use_container_width=True)
 
