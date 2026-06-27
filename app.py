@@ -135,42 +135,80 @@ if not st.session_state.login:
 @st.cache_data(ttl=120)
 def cargar_ventas():
 
-    respuesta = (
-        supabase
-        .table("ventas")
-        .select("*")
-        .execute()
-    )
+    todos_los_datos = []
+    rango_inicio = 0
+    tamaño_bloque = 1000
 
-    df = pd.DataFrame(respuesta.data)
+    while True:
+        respuesta = (
+            supabase
+            .table("ventas")
+            .select("*")
+            .range(rango_inicio, rango_inicio + tamaño_bloque - 1)
+            .execute()
+        )
+
+        datos = respuesta.data
+
+        if not datos:
+            break
+
+        todos_los_datos.extend(datos)
+
+        if len(datos) < tamaño_bloque:
+            break
+
+        rango_inicio += tamaño_bloque
+
+    df = pd.DataFrame(todos_los_datos)
 
     if df.empty:
         return df
 
     df.columns = df.columns.str.upper()
 
-    df["FECHA"] = pd.to_datetime(df["FECHA"])
+    df["FECHA"] = pd.to_datetime(df["FECHA"], errors="coerce")
     df["CANTIDAD"] = pd.to_numeric(df["CANTIDAD"], errors="coerce")
     df["TOTAL"] = pd.to_numeric(df["TOTAL"], errors="coerce")
+
+    df["SEDE"] = df["SEDE"].astype(str).str.upper().str.strip()
+    df["FAMILIA"] = df["FAMILIA"].astype(str).str.upper().str.strip()
+    df["DESCRIPCIO"] = df["DESCRIPCIO"].astype(str).str.upper().str.strip()
 
     df = df.dropna(subset=["FECHA", "CANTIDAD"])
     df = df.sort_values("FECHA")
 
     return df
 
+# @st.cache_data(ttl=120)
+# def cargar_ventas():
+
+#     respuesta = (
+#         supabase
+#         .table("ventas")
+#         .select("*")
+#         .execute()
+#     )
+
+#     df = pd.DataFrame(respuesta.data)
+
+#     if df.empty:
+#         return df
+
+#     df.columns = df.columns.str.upper()
+
+#     df["FECHA"] = pd.to_datetime(df["FECHA"])
+#     df["CANTIDAD"] = pd.to_numeric(df["CANTIDAD"], errors="coerce")
+#     df["TOTAL"] = pd.to_numeric(df["TOTAL"], errors="coerce")
+
+#     df = df.dropna(subset=["FECHA", "CANTIDAD"])
+#     df = df.sort_values("FECHA")
+
+#     return df
+
 
 df = cargar_ventas()
-
-st.write("Cantidad de registros:", len(df))
-st.write(df.head())
-
-st.write("Columnas:")
-st.write(df.columns.tolist())
-
-if "SEDE" in df.columns:
-    st.write("Sedes encontradas:")
-    st.write(df["SEDE"].unique())
-
+st.info(f"Datos cargados desde {df['FECHA'].min().date()} hasta {df['FECHA'].max().date()}")
 if df.empty:
     st.warning("No existen datos en la tabla ventas.")
     st.stop()
@@ -398,8 +436,8 @@ if st.button("Generar predicción", use_container_width=True):
     resultados = []
     registros_supabase = []
 
-    productos = df_familia["PRODUCTO"].unique()
-
+    # productos = df_familia["PRODUCTO"].unique()
+productos = df_familia["PRODUCTO"].dropna().unique()
     barra = st.progress(0)
 
     for i, producto in enumerate(productos):
@@ -462,13 +500,13 @@ if st.button("Generar predicción", use_container_width=True):
     pedido = pedido.sort_values("PREDICCION_TOTAL", ascending=False)
 
     # Guardar en Supabase
-    try:
-        supabase.table("predicciones").insert(registros_supabase).execute()
-        st.success("Predicción generada y guardada correctamente en Supabase.")
-    except Exception as e:
-        st.warning("La predicción se generó, pero no se pudo guardar en Supabase.")
-        st.write(e)
-
+    # try:
+    #     supabase.table("predicciones").insert(registros_supabase).execute()
+    #     st.success("Predicción generada y guardada correctamente en Supabase.")
+    # except Exception as e:
+    #     st.warning("La predicción se generó, pero no se pudo guardar en Supabase.")
+    #     st.write(e)
+st.success("Predicción generada correctamente.")
     # Mostrar tabla
     st.dataframe(pedido, use_container_width=True)
 
