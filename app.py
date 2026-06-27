@@ -969,39 +969,31 @@ if generar:
     except Exception:
         st.dataframe(pedido, use_container_width=True, height=430)
 
-        archivo = pedido.to_csv(index=False).encode("utf-8-sig")
-        
-        st.download_button(
-            label="📥 Descargar hoja de pedido CSV",
-            data=archivo,
-            file_name=f"pedido_{familia}_{horizonte}_dias.csv",
-            mime="text/csv",
-            use_container_width=True
-        )
-        
-        pdf = generar_pdf(
-            pedido,
-            st.session_state.usuario,
-            st.session_state.sede,
-            familia,
-            horizonte
-        )
+    archivo = pedido.to_csv(index=False).encode("utf-8-sig")
 
-st.download_button(
-    label="📄 Descargar Reporte Ejecutivo PDF",
-    data=pdf,
-    file_name=f"Reporte_MarketDonna_{familia}.pdf",
-    mime="application/pdf",
-    use_container_width=True
-)
+    st.download_button(
+        label="📥 Descargar hoja de pedido CSV",
+        data=archivo,
+        file_name=f"pedido_{familia}_{horizonte}_dias.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
 
-st.download_button(
-    label="📄 Descargar Reporte Ejecutivo PDF",
-    data=pdf,
-    file_name=f"Reporte_MarketDonna_{familia}.pdf",
-    mime="application/pdf",
-    use_container_width=True
-)
+    pdf = generar_pdf(
+        pedido,
+        st.session_state.usuario,
+        st.session_state.sede,
+        familia,
+        horizonte
+    )
+
+    st.download_button(
+        label="📄 Descargar Reporte Ejecutivo PDF",
+        data=pdf,
+        file_name=f"Reporte_MarketDonna_{familia}.pdf",
+        mime="application/pdf",
+        use_container_width=True
+    )
 
     st.write("")
 
@@ -1014,7 +1006,6 @@ st.download_button(
 
     top = pedido.head(10).set_index("DESCRIPCIO")["PREDICCION_TOTAL"]
     st.bar_chart(top)
-
 # ============================================================
 # ANÁLISIS HISTÓRICO
 # ============================================================
