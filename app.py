@@ -341,9 +341,28 @@ section[data-testid="stSidebar"] * {
     font-size: 13px;
     margin-bottom: 18px;
 }
+
+/* =========================
+   COLOR DEL TEXTO EN INPUTS
+========================= */
+
+.stTextInput input,
+.stTextInput input:focus {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+    font-weight: 600;
+}
+
+.stTextInput input::placeholder {
+    color: #9CA3AF !important;
+}
+
+div[data-baseweb="input"] input {
+    color: #000000 !important;
+    -webkit-text-fill-color: #000000 !important;
+}
 </style>
 """, unsafe_allow_html=True)
-
 # ============================================================
 # CONEXIÓN SUPABASE
 # ============================================================
