@@ -992,8 +992,8 @@ def generar_pdf(pedido, usuario, sede, familia, horizonte):
 
     resumen = [
         [
-            "Cantidad real",
-            f"{pedido['CANTIDAD'].sum():,.2f}",
+            "Productos analizados",
+            str(len(pedido)),
             "Predicción total",
             f"{pedido['PREDICCION_TOTAL'].sum():,.2f}",
             "Pedido sugerido",
@@ -1031,7 +1031,6 @@ def generar_pdf(pedido, usuario, sede, familia, horizonte):
         "DESCRIPCIO",
         "UNIDAD",
         "FAMILIA",
-        "CANTIDAD",
         "HORIZONTE_DIAS",
         "PREDICCION_TOTAL",
         "PEDIDO_SUGERIDO",
@@ -1047,7 +1046,6 @@ def generar_pdf(pedido, usuario, sede, familia, horizonte):
             Paragraph(escape(str(fila["DESCRIPCIO"])), celda),
             Paragraph(escape(str(fila["UNIDAD"])), celda),
             Paragraph(escape(str(fila["FAMILIA"])), celda),
-            f"{fila['CANTIDAD']:,.2f}",
             str(fila["HORIZONTE_DIAS"]),
             f"{fila['PREDICCION_TOTAL']:,.2f}",
             f"{fila['PEDIDO_SUGERIDO']:,.0f}",
@@ -1058,23 +1056,23 @@ def generar_pdf(pedido, usuario, sede, familia, horizonte):
 
         if fila["RECOMENDACION"] == "Comprar más":
             estilos_recomendacion.extend([
-                ("BACKGROUND", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#DCFCE7")),
-                ("TEXTCOLOR", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#166534")),
-                ("FONTNAME", (8, fila_pdf), (8, fila_pdf), "Helvetica-Bold"),
+                ("BACKGROUND", (7, fila_pdf), (7, fila_pdf), colors.HexColor("#DCFCE7")),
+                ("TEXTCOLOR", (7, fila_pdf), (7, fila_pdf), colors.HexColor("#166534")),
+                ("FONTNAME", (7, fila_pdf), (7, fila_pdf), "Helvetica-Bold"),
             ])
 
         elif fila["RECOMENDACION"] == "Comprar menos":
             estilos_recomendacion.extend([
-                ("BACKGROUND", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#FEE2E2")),
-                ("TEXTCOLOR", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#991B1B")),
-                ("FONTNAME", (8, fila_pdf), (8, fila_pdf), "Helvetica-Bold"),
+                ("BACKGROUND", (7, fila_pdf), (7, fila_pdf), colors.HexColor("#FEE2E2")),
+                ("TEXTCOLOR", (7, fila_pdf), (7, fila_pdf), colors.HexColor("#991B1B")),
+                ("FONTNAME", (7, fila_pdf), (7, fila_pdf), "Helvetica-Bold"),
             ])
 
         else:
             estilos_recomendacion.extend([
-                ("BACKGROUND", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#DBEAFE")),
-                ("TEXTCOLOR", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#1E40AF")),
-                ("FONTNAME", (8, fila_pdf), (8, fila_pdf), "Helvetica-Bold"),
+                ("BACKGROUND", (7, fila_pdf), (7, fila_pdf), colors.HexColor("#DBEAFE")),
+                ("TEXTCOLOR", (7, fila_pdf), (7, fila_pdf), colors.HexColor("#1E40AF")),
+                ("FONTNAME", (7, fila_pdf), (7, fila_pdf), "Helvetica-Bold"),
             ])
 
     tabla_pedido = Table(
@@ -1084,7 +1082,6 @@ def generar_pdf(pedido, usuario, sede, familia, horizonte):
             6.7 * cm,   # DESCRIPCIO
             1.8 * cm,   # UNIDAD
             1.8 * cm,   # FAMILIA
-            2.0 * cm,   # CANTIDAD
             2.3 * cm,   # HORIZONTE
             2.7 * cm,   # PREDICCION
             2.6 * cm,   # PEDIDO
@@ -1110,8 +1107,8 @@ def generar_pdf(pedido, usuario, sede, familia, horizonte):
         ("FONTSIZE", (0, 1), (-1, -1), 7),
 
         ("ALIGN", (0, 1), (0, -1), "CENTER"),
-        ("ALIGN", (4, 1), (7, -1), "RIGHT"),
-        ("ALIGN", (8, 1), (8, -1), "CENTER"),
+        ("ALIGN", (4, 1), (6, -1), "RIGHT"),
+        ("ALIGN", (7, 1), (7, -1), "CENTER"),
 
         ("TOPPADDING", (0, 0), (-1, -1), 5),
         ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
@@ -1132,7 +1129,6 @@ def generar_pdf(pedido, usuario, sede, familia, horizonte):
 
     observaciones = """
     Este reporte fue generado automáticamente por el sistema inteligente de predicción de pedidos de Market Donna.
-    La columna CANTIDAD muestra la venta real acumulada del producto según el mismo horizonte seleccionado.
     La predicción total y el pedido sugerido fueron calculados mediante un modelo Random Forest entrenado con el historial de ventas.
     """
 
@@ -1192,22 +1188,13 @@ if generar:
 
         descripcion = datos_producto["DESCRIPCIO"].iloc[-1]
         unidad = datos_producto["UNIDAD"].iloc[-1]
-        # aumento de cod
-        fecha_ultima_real = datos_producto["FECHA"].max()
-        fecha_inicio_real = fecha_ultima_real - pd.Timedelta(days=horizonte - 1)
-        
-        cantidad_real = (
-            datos_producto
-            .loc[datos_producto["FECHA"] >= fecha_inicio_real, "CANTIDAD"]
-            .sum()
-        )
+    
 
         resultados.append({
             "PRODUCTO": producto,
             "DESCRIPCIO": descripcion,
             "UNIDAD": unidad,
             "FAMILIA": familia,
-            "CANTIDAD": round(cantidad_real, 2),
             "HORIZONTE_DIAS": horizonte,
             "PREDICCION_TOTAL": round(total_predicho, 2),
             "PEDIDO_SUGERIDO": int(pedido_sugerido),
@@ -1243,7 +1230,6 @@ if generar:
     "DESCRIPCIO",
     "UNIDAD",
     "FAMILIA",
-    "CANTIDAD",
     "HORIZONTE_DIAS",
     "PREDICCION_TOTAL",
     "PEDIDO_SUGERIDO",
@@ -1279,7 +1265,7 @@ if generar:
             pintar_recomendacion,
             subset=["RECOMENDACION"]
         ).format({
-            "CANTIDAD": "{:,.2f}",
+            
             "PREDICCION_TOTAL": "{:,.2f}",
             "PEDIDO_SUGERIDO": "{:,.0f}"
         })
