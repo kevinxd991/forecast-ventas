@@ -13,8 +13,12 @@ from datetime import datetime
 from io import BytesIO
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_CENTER
-from reportlab.lib.styles import getSampleStyleSheet
+# from reportlab.lib.enums import TA_CENTER
+# from reportlab.lib.styles import getSampleStyleSheet
+from xml.sax.saxutils import escape
+from reportlab.lib.pagesizes import A4, landscape
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm
 from reportlab.platypus import (
     SimpleDocTemplate,
@@ -735,132 +739,404 @@ def pintar_recomendacion(valor):
         return "background-color: #FEE2E2; color: #991B1B; font-weight: 800;"
     return "background-color: #DBEAFE; color: #1E40AF; font-weight: 800;"
 
+# def generar_pdf(pedido, usuario, sede, familia, horizonte):
+
+#     buffer = BytesIO()
+
+#     doc = SimpleDocTemplate(
+#         buffer,
+#         pagesize=(21*cm,29.7*cm),
+#         rightMargin=1.2*cm,
+#         leftMargin=1.2*cm,
+#         topMargin=1.5*cm,
+#         bottomMargin=1.5*cm
+#     )
+
+#     estilos = getSampleStyleSheet()
+
+#     titulo = estilos["Heading1"]
+#     titulo.alignment = TA_CENTER
+
+#     subtitulo = estilos["Heading2"]
+
+#     normal = estilos["BodyText"]
+
+#     elementos = []
+
+#     elementos.append(Paragraph("<b>MARKET DONNA</b>", titulo))
+#     elementos.append(Paragraph("Reporte Ejecutivo de Predicción de Pedidos", subtitulo))
+#     elementos.append(Spacer(1,15))
+
+#     elementos.append(Paragraph(
+#         f"<b>Fecha de generación:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+#         normal))
+
+#     elementos.append(Paragraph(
+#         f"<b>Usuario:</b> {usuario}",
+#         normal))
+
+#     elementos.append(Paragraph(
+#         f"<b>Sede:</b> {sede}",
+#         normal))
+
+#     elementos.append(Paragraph(
+#         f"<b>Familia:</b> {familia}",
+#         normal))
+
+#     elementos.append(Paragraph(
+#         f"<b>Horizonte:</b> {horizonte} día(s)",
+#         normal))
+
+#     elementos.append(Spacer(1,20))
+
+#     elementos.append(Paragraph("<b>Resumen Ejecutivo</b>", subtitulo))
+
+#     resumen = [
+#         ["Indicador","Valor"],
+#         ["Productos Analizados", str(len(pedido))],
+#         ["Predicción Total", f"{pedido['PREDICCION_TOTAL'].sum():,.2f}"],
+#         ["Pedido Sugerido", f"{pedido['PEDIDO_SUGERIDO'].sum():,.0f}"]
+#     ]
+
+#     tabla = Table(resumen, colWidths=[8*cm,6*cm])
+
+#     tabla.setStyle(TableStyle([
+#         ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1D4ED8")),
+#         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+#         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+#         ('ALIGN',(0,0),(-1,-1),'CENTER'),
+#         ('GRID',(0,0),(-1,-1),1,colors.grey),
+#         ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
+#         ('BOTTOMPADDING',(0,0),(-1,0),10),
+#     ]))
+
+#     elementos.append(tabla)
+
+#     elementos.append(Spacer(1,20))
+
+#     elementos.append(Paragraph("<b>Hoja de Pedido Recomendada</b>", subtitulo))
+
+#     datos = [[
+#         "Producto",
+#         "Unidad",
+#         "Predicción",
+#         "Pedido",
+#         "Recomendación"
+#     ]]
+
+#     for _, fila in pedido.iterrows():
+
+#         datos.append([
+#             fila["DESCRIPCIO"],
+#             fila["UNIDAD"],
+#             f"{fila['PREDICCION_TOTAL']:.2f}",
+#             str(fila["PEDIDO_SUGERIDO"]),
+#             fila["RECOMENDACION"]
+#         ])
+
+#     tabla2 = Table(datos)
+
+#     tabla2.setStyle(TableStyle([
+#         ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#10B981")),
+#         ('TEXTCOLOR',(0,0),(-1,0),colors.white),
+#         ('GRID',(0,0),(-1,-1),0.5,colors.grey),
+#         ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
+#         ('BACKGROUND',(0,1),(-1,-1),colors.beige),
+#         ('FONTSIZE',(0,0),(-1,-1),8),
+#         ('BOTTOMPADDING',(0,0),(-1,0),8)
+#     ]))
+
+#     elementos.append(tabla2)
+
+#     elementos.append(Spacer(1,20))
+
+#     elementos.append(Paragraph("<b>Observaciones</b>", subtitulo))
+
+#     elementos.append(Paragraph(
+#         """
+#         • Este reporte fue generado automáticamente por el sistema
+#         inteligente de predicción de pedidos de Market Donna.
+
+#         • Las cantidades sugeridas fueron calculadas utilizando un modelo
+#         Random Forest entrenado con el historial de ventas.
+
+#         • Se recomienda revisar diariamente este reporte antes de realizar
+#         las compras para abastecimiento.
+#         """,
+#         normal
+#     ))
+
+#     doc.build(elementos)
+
+#     pdf = buffer.getvalue()
+#     buffer.close()
+
+#     return pdf
+
 def generar_pdf(pedido, usuario, sede, familia, horizonte):
 
     buffer = BytesIO()
 
     doc = SimpleDocTemplate(
         buffer,
-        pagesize=(21*cm,29.7*cm),
-        rightMargin=1.2*cm,
-        leftMargin=1.2*cm,
-        topMargin=1.5*cm,
-        bottomMargin=1.5*cm
+        pagesize=landscape(A4),
+        rightMargin=0.8 * cm,
+        leftMargin=0.8 * cm,
+        topMargin=1.0 * cm,
+        bottomMargin=1.0 * cm
     )
 
     estilos = getSampleStyleSheet()
 
-    titulo = estilos["Heading1"]
-    titulo.alignment = TA_CENTER
+    titulo = ParagraphStyle(
+        "TituloMarketDonna",
+        parent=estilos["Heading1"],
+        fontName="Helvetica-Bold",
+        fontSize=18,
+        leading=22,
+        textColor=colors.HexColor("#0F172A"),
+        alignment=TA_CENTER,
+        spaceAfter=4
+    )
 
-    subtitulo = estilos["Heading2"]
+    subtitulo = ParagraphStyle(
+        "SubtituloMarketDonna",
+        parent=estilos["BodyText"],
+        fontName="Helvetica",
+        fontSize=9,
+        leading=12,
+        textColor=colors.HexColor("#475569"),
+        alignment=TA_CENTER,
+        spaceAfter=12
+    )
 
-    normal = estilos["BodyText"]
+    seccion = ParagraphStyle(
+        "SeccionMarketDonna",
+        parent=estilos["Heading2"],
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=14,
+        textColor=colors.HexColor("#0F172A"),
+        spaceBefore=8,
+        spaceAfter=8
+    )
+
+    celda = ParagraphStyle(
+        "CeldaMarketDonna",
+        parent=estilos["BodyText"],
+        fontName="Helvetica",
+        fontSize=7,
+        leading=8,
+        textColor=colors.HexColor("#111827"),
+        alignment=TA_LEFT
+    )
+
+    celda_bold = ParagraphStyle(
+        "CeldaBoldMarketDonna",
+        parent=celda,
+        fontName="Helvetica-Bold"
+    )
 
     elementos = []
 
-    elementos.append(Paragraph("<b>MARKET DONNA</b>", titulo))
+    elementos.append(Paragraph("MARKET DONNA", titulo))
     elementos.append(Paragraph("Reporte Ejecutivo de Predicción de Pedidos", subtitulo))
-    elementos.append(Spacer(1,15))
 
-    elementos.append(Paragraph(
-        f"<b>Fecha de generación:</b> {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-        normal))
+    # =========================
+    # INFORMACIÓN GENERAL
+    # =========================
 
-    elementos.append(Paragraph(
-        f"<b>Usuario:</b> {usuario}",
-        normal))
-
-    elementos.append(Paragraph(
-        f"<b>Sede:</b> {sede}",
-        normal))
-
-    elementos.append(Paragraph(
-        f"<b>Familia:</b> {familia}",
-        normal))
-
-    elementos.append(Paragraph(
-        f"<b>Horizonte:</b> {horizonte} día(s)",
-        normal))
-
-    elementos.append(Spacer(1,20))
-
-    elementos.append(Paragraph("<b>Resumen Ejecutivo</b>", subtitulo))
-
-    resumen = [
-        ["Indicador","Valor"],
-        ["Productos Analizados", str(len(pedido))],
-        ["Predicción Total", f"{pedido['PREDICCION_TOTAL'].sum():,.2f}"],
-        ["Pedido Sugerido", f"{pedido['PEDIDO_SUGERIDO'].sum():,.0f}"]
+    info = [
+        [
+            Paragraph("<b>Fecha de generación</b>", celda_bold),
+            datetime.now().strftime("%d/%m/%Y %H:%M"),
+            Paragraph("<b>Usuario</b>", celda_bold),
+            escape(str(usuario))
+        ],
+        [
+            Paragraph("<b>Sede</b>", celda_bold),
+            escape(str(sede)),
+            Paragraph("<b>Familia</b>", celda_bold),
+            escape(str(familia))
+        ],
+        [
+            Paragraph("<b>Horizonte</b>", celda_bold),
+            f"{horizonte} día(s)",
+            Paragraph("<b>Productos analizados</b>", celda_bold),
+            str(len(pedido))
+        ]
     ]
 
-    tabla = Table(resumen, colWidths=[8*cm,6*cm])
+    tabla_info = Table(
+        info,
+        colWidths=[4.2 * cm, 6.0 * cm, 4.2 * cm, 6.0 * cm]
+    )
 
-    tabla.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#1D4ED8")),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('ALIGN',(0,0),(-1,-1),'CENTER'),
-        ('GRID',(0,0),(-1,-1),1,colors.grey),
-        ('BACKGROUND',(0,1),(-1,-1),colors.whitesmoke),
-        ('BOTTOMPADDING',(0,0),(-1,0),10),
+    tabla_info.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#E2E8F0")),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("TOPPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
     ]))
 
-    elementos.append(tabla)
+    elementos.append(tabla_info)
+    elementos.append(Spacer(1, 10))
 
-    elementos.append(Spacer(1,20))
+    # =========================
+    # RESUMEN EJECUTIVO
+    # =========================
 
-    elementos.append(Paragraph("<b>Hoja de Pedido Recomendada</b>", subtitulo))
+    elementos.append(Paragraph("Resumen Ejecutivo", seccion))
+
+    resumen = [
+        [
+            "Cantidad real",
+            f"{pedido['CANTIDAD'].sum():,.2f}",
+            "Predicción total",
+            f"{pedido['PREDICCION_TOTAL'].sum():,.2f}",
+            "Pedido sugerido",
+            f"{pedido['PEDIDO_SUGERIDO'].sum():,.0f}"
+        ]
+    ]
+
+    tabla_resumen = Table(
+        resumen,
+        colWidths=[3.2 * cm, 3.2 * cm, 3.2 * cm, 3.2 * cm, 3.2 * cm, 3.2 * cm]
+    )
+
+    tabla_resumen.setStyle(TableStyle([
+        ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EFF6FF")),
+        ("TEXTCOLOR", (0, 0), (-1, -1), colors.HexColor("#1E3A8A")),
+        ("FONTNAME", (0, 0), (-1, -1), "Helvetica-Bold"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#BFDBFE")),
+        ("TOPPADDING", (0, 0), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 8),
+        ("FONTSIZE", (0, 0), (-1, -1), 8),
+    ]))
+
+    elementos.append(tabla_resumen)
+    elementos.append(Spacer(1, 12))
+
+    # =========================
+    # TABLA PRINCIPAL
+    # =========================
+
+    elementos.append(Paragraph("Hoja de Pedido Recomendada", seccion))
 
     datos = [[
-        "Producto",
-        "Unidad",
-        "Predicción",
-        "Pedido",
-        "Recomendación"
+        "PRODUCTO",
+        "DESCRIPCIO",
+        "UNIDAD",
+        "FAMILIA",
+        "CANTIDAD",
+        "HORIZONTE_DIAS",
+        "PREDICCION_TOTAL",
+        "PEDIDO_SUGERIDO",
+        "RECOMENDACION"
     ]]
+
+    estilos_recomendacion = []
 
     for _, fila in pedido.iterrows():
 
         datos.append([
-            fila["DESCRIPCIO"],
-            fila["UNIDAD"],
-            f"{fila['PREDICCION_TOTAL']:.2f}",
-            str(fila["PEDIDO_SUGERIDO"]),
-            fila["RECOMENDACION"]
+            Paragraph(escape(str(fila["PRODUCTO"])), celda),
+            Paragraph(escape(str(fila["DESCRIPCIO"])), celda),
+            Paragraph(escape(str(fila["UNIDAD"])), celda),
+            Paragraph(escape(str(fila["FAMILIA"])), celda),
+            f"{fila['CANTIDAD']:,.2f}",
+            str(fila["HORIZONTE_DIAS"]),
+            f"{fila['PREDICCION_TOTAL']:,.2f}",
+            f"{fila['PEDIDO_SUGERIDO']:,.0f}",
+            Paragraph(escape(str(fila["RECOMENDACION"])), celda_bold)
         ])
 
-    tabla2 = Table(datos)
+        fila_pdf = len(datos) - 1
 
-    tabla2.setStyle(TableStyle([
-        ('BACKGROUND',(0,0),(-1,0),colors.HexColor("#10B981")),
-        ('TEXTCOLOR',(0,0),(-1,0),colors.white),
-        ('GRID',(0,0),(-1,-1),0.5,colors.grey),
-        ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),
-        ('BACKGROUND',(0,1),(-1,-1),colors.beige),
-        ('FONTSIZE',(0,0),(-1,-1),8),
-        ('BOTTOMPADDING',(0,0),(-1,0),8)
-    ]))
+        if fila["RECOMENDACION"] == "Comprar más":
+            estilos_recomendacion.extend([
+                ("BACKGROUND", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#DCFCE7")),
+                ("TEXTCOLOR", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#166534")),
+                ("FONTNAME", (8, fila_pdf), (8, fila_pdf), "Helvetica-Bold"),
+            ])
 
-    elementos.append(tabla2)
+        elif fila["RECOMENDACION"] == "Comprar menos":
+            estilos_recomendacion.extend([
+                ("BACKGROUND", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#FEE2E2")),
+                ("TEXTCOLOR", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#991B1B")),
+                ("FONTNAME", (8, fila_pdf), (8, fila_pdf), "Helvetica-Bold"),
+            ])
 
-    elementos.append(Spacer(1,20))
+        else:
+            estilos_recomendacion.extend([
+                ("BACKGROUND", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#DBEAFE")),
+                ("TEXTCOLOR", (8, fila_pdf), (8, fila_pdf), colors.HexColor("#1E40AF")),
+                ("FONTNAME", (8, fila_pdf), (8, fila_pdf), "Helvetica-Bold"),
+            ])
 
-    elementos.append(Paragraph("<b>Observaciones</b>", subtitulo))
+    tabla_pedido = Table(
+        datos,
+        colWidths=[
+            1.8 * cm,   # PRODUCTO
+            6.7 * cm,   # DESCRIPCIO
+            1.8 * cm,   # UNIDAD
+            1.8 * cm,   # FAMILIA
+            2.0 * cm,   # CANTIDAD
+            2.3 * cm,   # HORIZONTE
+            2.7 * cm,   # PREDICCION
+            2.6 * cm,   # PEDIDO
+            3.0 * cm    # RECOMENDACION
+        ],
+        repeatRows=1
+    )
 
-    elementos.append(Paragraph(
-        """
-        • Este reporte fue generado automáticamente por el sistema
-        inteligente de predicción de pedidos de Market Donna.
+    estilo_base = [
+        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#F1F5F9")),
+        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#475569")),
+        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+        ("FONTSIZE", (0, 0), (-1, 0), 7),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
 
-        • Las cantidades sugeridas fueron calculadas utilizando un modelo
-        Random Forest entrenado con el historial de ventas.
+        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#E5E7EB")),
+        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [
+            colors.white,
+            colors.HexColor("#F9FAFB")
+        ]),
 
-        • Se recomienda revisar diariamente este reporte antes de realizar
-        las compras para abastecimiento.
-        """,
-        normal
-    ))
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("FONTSIZE", (0, 1), (-1, -1), 7),
+
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),
+        ("ALIGN", (4, 1), (7, -1), "RIGHT"),
+        ("ALIGN", (8, 1), (8, -1), "CENTER"),
+
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+    ]
+
+    tabla_pedido.setStyle(TableStyle(estilo_base + estilos_recomendacion))
+
+    elementos.append(tabla_pedido)
+    elementos.append(Spacer(1, 12))
+
+    # =========================
+    # OBSERVACIONES
+    # =========================
+
+    elementos.append(Paragraph("Observaciones", seccion))
+
+    observaciones = """
+    Este reporte fue generado automáticamente por el sistema inteligente de predicción de pedidos de Market Donna.
+    La columna CANTIDAD muestra la venta real acumulada del producto según el mismo horizonte seleccionado.
+    La predicción total y el pedido sugerido fueron calculados mediante un modelo Random Forest entrenado con el historial de ventas.
+    """
+
+    elementos.append(Paragraph(observaciones, celda))
 
     doc.build(elementos)
 
@@ -916,12 +1192,22 @@ if generar:
 
         descripcion = datos_producto["DESCRIPCIO"].iloc[-1]
         unidad = datos_producto["UNIDAD"].iloc[-1]
+        # aumento de cod
+        fecha_ultima_real = datos_producto["FECHA"].max()
+        fecha_inicio_real = fecha_ultima_real - pd.Timedelta(days=horizonte - 1)
+        
+        cantidad_real = (
+            datos_producto
+            .loc[datos_producto["FECHA"] >= fecha_inicio_real, "CANTIDAD"]
+            .sum()
+        )
 
         resultados.append({
             "PRODUCTO": producto,
             "DESCRIPCIO": descripcion,
             "UNIDAD": unidad,
             "FAMILIA": familia,
+            "CANTIDAD": round(cantidad_real, 2),
             "HORIZONTE_DIAS": horizonte,
             "PREDICCION_TOTAL": round(total_predicho, 2),
             "PEDIDO_SUGERIDO": int(pedido_sugerido),
@@ -952,6 +1238,20 @@ if generar:
 
     pedido = pedido.sort_values("PREDICCION_TOTAL", ascending=False)
 
+    columnas_orden = [
+    "PRODUCTO",
+    "DESCRIPCIO",
+    "UNIDAD",
+    "FAMILIA",
+    "CANTIDAD",
+    "HORIZONTE_DIAS",
+    "PREDICCION_TOTAL",
+    "PEDIDO_SUGERIDO",
+    "RECOMENDACION"
+    ]
+    
+    pedido = pedido[columnas_orden]
+    
     st.success("Predicción generada correctamente.")
 
     r1, r2, r3 = st.columns(3)
@@ -979,6 +1279,7 @@ if generar:
             pintar_recomendacion,
             subset=["RECOMENDACION"]
         ).format({
+            "CANTIDAD": "{:,.2f}",
             "PREDICCION_TOTAL": "{:,.2f}",
             "PEDIDO_SUGERIDO": "{:,.0f}"
         })
